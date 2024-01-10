@@ -8,7 +8,7 @@ For programming your CatSniffer you need to review what version do you own this 
 
 `IF YOU SELECT A DIFFERENT FIRMWARE VERSION THAN YOUR CATSNIFFER YOU WILL BIRCK IT`
 
-If you have a bricked CatSniffer you can read the [wiki part to recover it](https://github.com/ElectronicCats/CatSniffer/wiki/08.-Restore-the-CC1352-firmware).
+If you have a bricked CatSniffer you can read the [wiki part to recover it]([https://github.com/ElectronicCats/CatSniffer/wiki/08.-Restore-the-CC1352-firmware](https://github.com/ElectronicCats/CatSniffer/wiki/10.-Restore-CC1352)).
 
 Each firmware folder includes the examples that are compatible with your board: 
 
@@ -20,7 +20,7 @@ v1.x/2.x has as a main microcontroller one SAMD21E17A, from Microchip, allowing 
 
 The SAMD21E17 can be programmed directly via USB with the [Electronic Cats SAMD Arduino Core](https://github.com/ElectronicCats/ArduinoCore-samd).
 
-The CC1352P can be programmed via Serial using the [tool cc2538](../tools/cc2538-bsl/cc2538-bsl.py) with the specific hex file you want to flash, if you flash the CC1352 in a bad way, it may get stuck and it WILL NOT ALLOW YOU TO RE-PROGRAM BY BOOTLOADER, to re-flash the board you will need to erase the CC1352 with any cJTAG programmer, to enable the serial bootloader again, you can read more about this in the [wiki](https://github.com/ElectronicCats/CatSniffer/wiki/08.-Restore-the-CC1352-firmware).
+The CC1352P can be programmed via Serial using the [tool cc2538](cc2538-bsl/cc2538-bsl.py) with the specific hex file you want to flash, if you flash the CC1352 in a bad way, it may get stuck and it WILL NOT ALLOW YOU TO RE-PROGRAM BY BOOTLOADER, to re-flash the board you will need to erase the CC1352 with any cJTAG programmer, to enable the serial bootloader again, you can read more about this in the [wiki](https://github.com/ElectronicCats/CatSniffer/wiki/08.-Restore-the-CC1352-firmware).
 
 ![v2.x Block Diagram](https://private-user-images.githubusercontent.com/139595394/279812398-e6c0238a-13c4-4fa2-b401-1d1cedf702f0.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MDQ5Mjg5NzksIm5iZiI6MTcwNDkyODY3OSwicGF0aCI6Ii8xMzk1OTUzOTQvMjc5ODEyMzk4LWU2YzAyMzhhLTEzYzQtNGZhMi1iNDAxLTFkMWNlZGY3MDJmMC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwMTEwJTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDExMFQyMzE3NTlaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1hYjdkNTcyZGY0Y2QzYjNjOTUzNWM2NzRmYjE3M2I2MTVjNDdlNjI1MDhiMTAzOTJmNGY4OGUzYzQyZGVmYjBmJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.mqbdoHJDuD5V5O3kTivUzx-6fwO9b2FKrwfbF60hWxU)
 
