@@ -112,12 +112,34 @@ void setup() {
   digitalWrite(LED3, catsniffer.mode);
 }
 
+uint8_t commandID[2]={0xf1, 0x3C};
+bool asciiRecognized=0;
+bool commandRecognized=0;
+String commandData="";
+
 void loop() {
   // ñ<Payload>ñ Catsnifffer Commands
-  
   //SerialPassthrough 
   if (Serial.available()) {      // If anything comes in Serial (USB),
-    Serial1.write(Serial.read());   // read it and send it out Serial1 (pins 0 & 1)
+    int data = Serial.read();
+
+    if(!commandRecognized){
+      if(data==commandID[0] && !asciiRecognized)
+        asciiRecognized==1;
+      if(data==commandID[1] && asciiRecognized)
+        commandRecognized==1;
+    }
+    
+    if(commandRecognized){
+      commandData+=String(data);
+      if(commandData.indexOf(">ñ")){
+        Serial.println("PING!");
+        commandRecognized=0;
+      }
+    }else{
+      Serial1.write(data);   // read it and send it out Serial1 (pins 0 & 1)
+    }
+
   }
 
   if (Serial1.available()) {     // If anything comes in Serial1 (pins 0 & 1)
