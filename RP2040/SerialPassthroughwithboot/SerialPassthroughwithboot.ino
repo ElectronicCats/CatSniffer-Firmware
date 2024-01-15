@@ -112,32 +112,34 @@ void setup() {
   digitalWrite(LED3, catsniffer.mode);
 }
 
-uint8_t commandID[2]={0xC3, 0xB1};
+const uint8_t commandID[5]={0xC3, 0xB1, 0xC3, 0xBF, 0x3C};
+uint8_t commandCheck[5]={0};
 bool asciiRecognized=0;
 bool commandRecognized=0;
 String commandData="";
+uint8_t commandCounter=0;
 
 void loop() {
   // ñ<Payload>ñ Catsnifffer Commands
   //SerialPassthrough 
   if (Serial.available()) {      // If anything comes in Serial (USB),
     int data = Serial.read();
-    if(!commandRecognized){
-      if(data==commandID[0] && !asciiRecognized){
-        asciiRecognized=1;
-      }
-      if(data==commandID[1] && asciiRecognized){
+    if(data==commandID[commandCounter]){
+      commandCounter++;
+      if(commandCounter==5) //all characters have matched
         commandRecognized=1;
-      }
+    }else if(!commandRecognized){
+      commandCounter=0;
     }
     if(commandRecognized){
       commandData+=String((char)data);
-      if(commandData.endsWith(">ñ")){
-        Serial.print(commandData);
+      if(commandData.endsWith(">ÿñ")){
+        processCommand(&commandData);
         commandData="";
         commandRecognized=0;
       }
-    }else{
+    }
+    else{                    //Command not recognized, send out serial
       Serial1.write(data);   // read it and send it out Serial1 (pins 0 & 1)
     }
 
@@ -164,7 +166,7 @@ void loop() {
 void resetCC(void){
   delay(100);
   digitalWrite(Pin_Reset, LOW);
-  delay(100);
+  delay(500);
   digitalWrite(Pin_Reset, HIGH);
   delay(100);
   }
@@ -175,10 +177,10 @@ void bootModeCC(void){
   digitalWrite(Pin_Boot, LOW);
   delay(100);
   digitalWrite(Pin_Reset, LOW);
-  delay(100);
+  delay(500);
   digitalWrite(Pin_Reset, HIGH);
-  delay(100);
-  digitalWrite(Pin_Boot, HIGH);
+  delay(200);
+  digitalWrite(Pin_Boot, LOW);
   }
 
 void changeBaud(catsniffer_t *cs, unsigned long newBaud){
@@ -193,6 +195,7 @@ void changeBaud(catsniffer_t *cs, unsigned long newBaud){
   Serial1.begin(cs->baud);
   return;
   }
+
 
 void changeBand(catsniffer_t *cs, unsigned long newBand){
   if(newBand==cs->band)
@@ -219,6 +222,55 @@ void changeBand(catsniffer_t *cs, unsigned long newBand){
   return;
   }
 
-//void processCommand(){
-//  
-//  }
+
+void changeMode(catsniffer_t *cs, unsigned long newMode){
+  if(newMode==cs->mode)
+    return;
+  cs->mode = newMode;
+  if(cs->mode==BOOT){
+      cs->led_interval=200;
+      changeBaud(cs, 500000);
+      
+      pinMode(Pin_Boot, OUTPUT);
+      digitalWrite(Pin_Boot, LOW);
+      digitalWrite(Pin_Reset, LOW);
+      // resetCC();
+      // delay(200);
+      // bootModeCC();
+  }
+  if(cs->mode==PASSTRHOUGH){
+      digitalWrite(Pin_Boot, HIGH);
+      cs->led_interval=1000;
+      changeBaud(cs, 921600);
+      resetCC();
+  }
+
+  return;
+  }
+
+void processCommand(String *cmd){
+  cmd->remove(0, 1);
+  cmd->remove(cmd->indexOf(">ÿñ"),5);
+  Serial.println(*cmd);
+  //enter boot mode
+  if("boot" == *cmd){
+    changeMode(&catsniffer, BOOT);
+    Serial.println("change to bootmode");
+    digitalWrite(LED1, 0);
+    digitalWrite(LED2, 0);
+    digitalWrite(LED3, catsniffer.mode);
+  }
+  //exit boot mode
+  if("exit" == *cmd){
+    changeMode(&catsniffer, PASSTRHOUGH);
+    Serial.println("change to PASSTRHOUGH");
+    digitalWrite(LED1, 0);
+    digitalWrite(LED2, 0);
+    digitalWrite(LED3, 0);
+  }
+  //change RF band to work with
+  //Ping?
+  //Return catsniffer version
+    
+  return;
+ }
