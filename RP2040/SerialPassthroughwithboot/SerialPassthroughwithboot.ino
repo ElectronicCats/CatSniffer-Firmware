@@ -122,7 +122,6 @@ void loop() {
   //SerialPassthrough 
   if (Serial.available()) {      // If anything comes in Serial (USB),
     int data = Serial.read();
-    //Serial.println(data,HEX);
     if(!commandRecognized){
       if(data==commandID[0] && !asciiRecognized){
         asciiRecognized=1;
@@ -131,12 +130,10 @@ void loop() {
         commandRecognized=1;
       }
     }
-    
     if(commandRecognized){
-      commandData+=String(data);
-      Serial.println(commandData);
-      if(commandData.indexOf(">ñ")){
-        Serial.println("PING!");
+      commandData+=String((char)data);
+      if(commandData.endsWith(">ñ")){
+        Serial.print(commandData);
         commandData="";
         commandRecognized=0;
       }
