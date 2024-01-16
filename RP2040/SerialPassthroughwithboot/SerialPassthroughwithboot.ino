@@ -12,55 +12,19 @@
   
 */
 
-//Pin declaration to enter bootloader mode on CC1352
-#define Pin_Reset (15)
-#define Pin_Reset_Viewer (3)
-#define Pin_Boot (2)
-#define Pin_Button (2)
-#define LED1 (27)
-#define LED2 (26)
-#define LED3 (28)
-//Pin Declaration for RF switch
-#define CTF1 8
-#define CTF2 9
-#define CTF3 10
-
-enum MODE{
-   PASSTRHOUGH = 0, 
-   BOOT, 
-   LORA
- };
-
-enum BAND{
-   GIG = 0, 
-   SUBGIG_1, 
-   SUBGIG_2
- };
-
-typedef struct {
-  uint8_t mode;
-  bool mode_tested;
-  uint8_t band;
-  unsigned long led_interval;
-  unsigned long previousMillis;  // will store last time blink happened
-  unsigned long baud;
-} catsniffer_t;
+#include "SerialPassthroughwithboot.h"
 
 catsniffer_t catsniffer;
-
-void bootModeCC(void);
-void changeBaud(catsniffer_t *cs, unsigned long newBaud);
-void changeBand(catsniffer_t *cs, unsigned long newBand);
-
-//Mode flag = 1; for bootloader options @ 500000 bauds
-//Mode flag = 0; for passthrough @ 921600 bauds
-bool MODE_FLAG = 0;
 
 uint8_t LEDs[3]={LED1,LED2,LED3};
 int i=0;
 
-unsigned long interval = 0;    // interval to blink LED
-unsigned long previousMillis = 0;  // will store last time blink happened
+const uint8_t commandID[5]={0xC3, 0xB1, 0xC3, 0xBF, 0x3C};
+uint8_t commandCheck[5]={0};
+bool asciiRecognized=0;
+bool commandRecognized=0;
+String commandData="";
+uint8_t commandCounter=0;
 
 void setup() {
   pinMode(Pin_Button, INPUT_PULLUP);
@@ -112,15 +76,8 @@ void setup() {
   digitalWrite(LED3, catsniffer.mode);
 }
 
-const uint8_t commandID[5]={0xC3, 0xB1, 0xC3, 0xBF, 0x3C};
-uint8_t commandCheck[5]={0};
-bool asciiRecognized=0;
-bool commandRecognized=0;
-String commandData="";
-uint8_t commandCounter=0;
 
 void loop() {
-  // ñ<Payload>ñ Catsnifffer Commands
   //SerialPassthrough 
   if (Serial.available()) {      // If anything comes in Serial (USB),
     int data = Serial.read();
@@ -148,8 +105,7 @@ void loop() {
   if (Serial1.available()) {     // If anything comes in Serial1 (pins 0 & 1)
     Serial.write(Serial1.read());   // read it and send it out Serial (USB)
   }
-  
-  
+    
   if(millis() - catsniffer.previousMillis > catsniffer.led_interval) {
     catsniffer.previousMillis = millis(); 
     if(catsniffer.mode){
@@ -159,8 +115,8 @@ void loop() {
     }else{
       digitalWrite(LED3, !digitalRead(LED3));
     }
-    
   }
+
 }
 
 void resetCC(void){
@@ -249,6 +205,7 @@ void changeMode(catsniffer_t *cs, unsigned long newMode){
   }
 
 void processCommand(String *cmd){
+  // ñÿ<Payload>ÿñ Catsnifffer Commands
   cmd->remove(0, 1);
   cmd->remove(cmd->indexOf(">ÿñ"),5);
   Serial.println(*cmd);
