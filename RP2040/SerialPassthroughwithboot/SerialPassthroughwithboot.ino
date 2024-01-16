@@ -31,6 +31,7 @@ void setup() {
   pinMode(Pin_Boot, INPUT_PULLUP);
   pinMode(Pin_Reset, OUTPUT);
   pinMode(Pin_Reset_Viewer, INPUT);
+  digitalWrite(Pin_Reset, HIGH);
   
   pinMode(LED1,OUTPUT);
   pinMode(LED2,OUTPUT);
@@ -54,13 +55,14 @@ void setup() {
     catsniffer.led_interval=1000;
     catsniffer.baud=921600;
     catsniffer.mode=PASSTRHOUGH;
-    pinMode(Pin_Reset, INPUT);
   }
   while(!digitalRead(Pin_Boot));
 
   //Begin Serial ports
   Serial.begin(catsniffer.baud);
   Serial1.begin(catsniffer.baud);
+
+  resetCC();
 
   if(catsniffer.mode==BOOT){
     bootModeCC();
@@ -120,9 +122,8 @@ void loop() {
 }
 
 void resetCC(void){
-  delay(100);
   digitalWrite(Pin_Reset, LOW);
-  delay(500);
+  delay(100);
   digitalWrite(Pin_Reset, HIGH);
   delay(100);
   }
@@ -132,10 +133,7 @@ void bootModeCC(void){
   //Enter bootloader mode function
   digitalWrite(Pin_Boot, LOW);
   delay(100);
-  digitalWrite(Pin_Reset, LOW);
-  delay(500);
-  digitalWrite(Pin_Reset, HIGH);
-  delay(200);
+  resetCC();
   digitalWrite(Pin_Boot, LOW);
   }
 
@@ -185,14 +183,10 @@ void changeMode(catsniffer_t *cs, unsigned long newMode){
   cs->mode = newMode;
   if(cs->mode==BOOT){
       cs->led_interval=200;
+      bootModeCC();
+      resetCC();
+      delay(200);
       changeBaud(cs, 500000);
-      
-      pinMode(Pin_Boot, OUTPUT);
-      digitalWrite(Pin_Boot, LOW);
-      digitalWrite(Pin_Reset, LOW);
-      // resetCC();
-      // delay(200);
-      // bootModeCC();
   }
   if(cs->mode==PASSTRHOUGH){
       digitalWrite(Pin_Boot, HIGH);
@@ -208,11 +202,11 @@ void processCommand(String *cmd){
   // ñÿ<Payload>ÿñ Catsnifffer Commands
   cmd->remove(0, 1);
   cmd->remove(cmd->indexOf(">ÿñ"),5);
-  Serial.println(*cmd);
+  //Serial.println(*cmd);
   //enter boot mode
   if("boot" == *cmd){
     changeMode(&catsniffer, BOOT);
-    Serial.println("change to bootmode");
+    Serial.println("BOOT");
     digitalWrite(LED1, 0);
     digitalWrite(LED2, 0);
     digitalWrite(LED3, catsniffer.mode);
@@ -220,7 +214,7 @@ void processCommand(String *cmd){
   //exit boot mode
   if("exit" == *cmd){
     changeMode(&catsniffer, PASSTRHOUGH);
-    Serial.println("change to PASSTRHOUGH");
+    Serial.println("PASSTRHOUGH");
     digitalWrite(LED1, 0);
     digitalWrite(LED2, 0);
     digitalWrite(LED3, 0);

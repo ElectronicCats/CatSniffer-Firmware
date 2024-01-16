@@ -2,8 +2,8 @@
 #define SERIAL_PASSTHROUGH_H
 
 //Pin declaration to enter bootloader mode on CC1352
-#define Pin_Reset (15)
-#define Pin_Reset_Viewer (3)
+#define Pin_Reset (3)
+#define Pin_Reset_Viewer (15)
 #define Pin_Boot (2)
 #define Pin_Button (2)
 #define LED1 (27)
