@@ -3,7 +3,7 @@
 
   Andres Sabas @ Electronic Cats
   Eduardo Contreras @ Electronic Cats
-  Original Creation Date: Jul 10, 2023
+  Original Creation Date: Jan 16, 2024
 
   This code is beerware; if you see me (or any other Electronic Cats
   member) at the local, and you've found our code helpful,
@@ -134,7 +134,6 @@ void bootModeCC(void){
   digitalWrite(Pin_Boot, LOW);
   delay(100);
   resetCC();
-  digitalWrite(Pin_Boot, LOW);
   }
 
 void changeBaud(catsniffer_t *cs, unsigned long newBaud){
@@ -189,10 +188,11 @@ void changeMode(catsniffer_t *cs, unsigned long newMode){
       changeBaud(cs, 500000);
   }
   if(cs->mode==PASSTRHOUGH){
+      // Update boot state
       digitalWrite(Pin_Boot, HIGH);
+      resetCC();
       cs->led_interval=1000;
       changeBaud(cs, 921600);
-      resetCC();
   }
 
   return;
