@@ -1,0 +1,5 @@
+# Firmware for CC1352P7 (Catsniffer 3.x)
+* Sniffle_CC1352P_7: BLE sniffer for Bluetooth 5 and 4.x (LE) from NCC Group. See [Sniffle](https://github.com/nccgroup/Sniffle) (Windows/Linux/Mac)
+* sniffer_fw_cc1252P_7: Multiprotocol sniffer from Texas Instrument (Windows)
+* airtag_scanner_CC1352P_7: Apple Airtag Scanner firmware (Windows/Linux/Mac)
+* airtag_spoofer_CC1352P_7: Apple Airtag Spoofer firmware (Windows/Linux/Mac)
