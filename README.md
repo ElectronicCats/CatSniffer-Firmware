@@ -87,6 +87,18 @@ Wireless protocol support:
 
 [![WIKI](https://user-images.githubusercontent.com/40640735/217364175-6e3af8df-e6b4-4fcd-9515-09ff02639f64.jpg)](https://github.com/ElectronicCats/CatSniffer/wiki)
 
+## Software Repository
+All Catsniffer Software has been moved to a different repository, to have a better version control, and issue tracking you will find it here:
+
+https://github.com/ElectronicCats/CatSniffer-Tools
+
+All catsniffer versions are supported in this repository, you will need to check what version you own and select the proper branch to develop or release for just program your board.
+
+## Hardware Repository
+All Catsniffer Hardware has been moved to a different repository, to have a better version control, and issue tracking you will find it here:
+
+https://github.com/ElectronicCats/CatSniffer
+
 ## How to contribute <img src="https://electroniccats.com/wp-content/uploads/2018/01/fav.png" height="35"><img src="https://raw.githubusercontent.com/gist/ManulMax/2d20af60d709805c55fd784ca7cba4b9/raw/bcfeac7604f674ace63623106eb8bb8471d844a6/github.gif" height="30">
  Contributions are welcome! 
 
