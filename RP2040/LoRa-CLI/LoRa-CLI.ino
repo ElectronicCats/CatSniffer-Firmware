@@ -11,7 +11,7 @@
 
 #define SERIALCOMMAND_HARDWAREONLY
 
-#include <SerialCommand.h>
+#include <SerialCommand.h> // https://github.com/kroimon/Arduino-SerialCommand
 #include <RadioLib.h>
 
 #define CTF1 8
