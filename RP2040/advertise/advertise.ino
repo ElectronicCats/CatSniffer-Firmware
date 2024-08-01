@@ -59,7 +59,7 @@ uint8_t error=cmdAdvertise(advData,scanRspData,0);
 
 
 void loop() {
-
+  Serial1.write("FxwAHgIBGgIKDBEHZBTq1y/bo7BZSBbUMILLJwUDChgNGAAMCwlDYXRTbmlmZmVyAAAAAAAAAAAAAAAAAAAAAAAAAA==\r\n");
 }
 
 
@@ -163,6 +163,7 @@ void cmdSend(int mode, byte* paddedAdvData, byte* paddedScanRspData) {
       Serial.print("\n");
     //
     
+    /*
     unsigned char msg[cmdLen+1];// Prepare a byte array to hold the encoded message
     unsigned int msgLen = encode_base64(cmd,cmdLen,msg); //Create a variable to hold the length of the msg and encode the msg
 
@@ -177,14 +178,18 @@ void cmdSend(int mode, byte* paddedAdvData, byte* paddedScanRspData) {
     //
 
     
-    /* Append "\r\n" to encoded_msg
+     Append "\r\n" to encoded_msg
     encoded_msg[encoded_length] = '\r';
     encoded_msg[encoded_length + 1] = '\n';
     encoded_length += 2;
-    
-    // Write the encoded message to serial
-    Serial.write(encoded_msg, encoded_length);
     */
+
+    char *encodedMsg = "FxwAHgIBGgIKDBEHZBTq1y/bo7BZSBbUMILLJwUDChgNGAAMCwlDYXRTbmlmZmVyAAAAAAAAAAAAAAAAAAAAAAAAAA==\r\n";
+     int encodedMsgLength = strlen(encodedMsg);
+    // Write the encoded message to serial
+    //Serial1.write(encodedMsg, encodedMsgLength);
+    
+    
 }
 
 
