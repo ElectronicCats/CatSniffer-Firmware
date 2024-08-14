@@ -20,7 +20,7 @@ v1.x/2.x has as a main microcontroller one SAMD21E17A, from Microchip, allowing 
 
 The SAMD21E17 can be programmed directly via USB with the [Electronic Cats SAMD Arduino Core](https://github.com/ElectronicCats/ArduinoCore-samd).
 
-The CC1352P can be programmed via Serial using the [tool cc2538](cc2538-bsl/cc2538-bsl.py) with the specific hex file you want to flash, if you flash the CC1352 in a bad way, it may get stuck and it WILL NOT ALLOW YOU TO RE-PROGRAM BY BOOTLOADER, to re-flash the board you will need to erase the CC1352 with any cJTAG programmer, to enable the serial bootloader again, you can read more about this in the [wiki](https://github.com/ElectronicCats/CatSniffer/wiki/08.-Restore-the-CC1352-firmware).
+The CC1352P can be programmed via Serial using the [tool cc2538](https://github.com/ElectronicCats/CatSniffer-Tools/tree/main/cc2538-bsl) with the specific hex file you want to flash, if you flash the CC1352 in a bad way, it may get stuck and it WILL NOT ALLOW YOU TO RE-PROGRAM BY BOOTLOADER, to re-flash the board you will need to erase the CC1352 with any cJTAG programmer, to enable the serial bootloader again, you can read more about this in the [wiki](https://github.com/ElectronicCats/CatSniffer/wiki).
 
 ![v2.x Block Diagram](https://github.com/ElectronicCats/CatSniffer/assets/139595394/e6c0238a-13c4-4fa2-b401-1d1cedf702f0)
 
@@ -28,7 +28,7 @@ v3.x has as a main microcontroller one RP2040, from Raspberry Pi, allowing the c
 
 The RP2040 can be programmed directly via USB with the [Arduino Mbed RP2040 Core](https://github.com/arduino/ArduinoCore-mbed), it is important to acknolage one [bug inside the Arduino Core for the RP2040](https://github.com/arduino/ArduinoCore-mbed/issues/532), and its mandatory to change one line of code inside the core.
 
-The CC1352P can be programmed via Serial using the [tool cc2538](../tools/cc2538-bsl/cc2538-bsl.py) with the specific hex file you want to flash, if you flash in a bad way the CC1352, it may get stuck, in this version we included a JTAG connection to erase all the flash, to enable the serial bootloader again.
+The CC1352P can be programmed via Serial using the [tool cc2538](https://github.com/ElectronicCats/CatSniffer-Tools/tree/main/cc2538-bsl) with the specific hex file you want to flash, if you flash in a bad way the CC1352, it may get stuck, in this version we included a JTAG connection to erase all the flash, to enable the serial bootloader again.
 
 ![v3.x Block Diagram](https://github.com/ElectronicCats/CatSniffer/assets/139595394/9467331c-014f-48a6-9934-0a0b5fa63f27)
 
