@@ -25,6 +25,15 @@
 
 uint8_t LEDs[3]={LED1,LED2,LED3};
 
+float hopChannels[] = {903.0, 905.0, 907.0, 909.0, 911.0};
+uint8_t numHopChannels = sizeof(hopChannels)/sizeof(hopChannels[0]);
+uint8_t currentHopChannelIdx = 0;
+
+bool isHopping = false;
+
+unsigned long lastHopTime = 0;
+unsigned long hopInterval = 0.16; // Seconds
+
 SerialCommand SCmd;
 
 float fwVersion= 0.1;
@@ -57,6 +66,7 @@ void setup() {
   // Setup callbacks for SerialCommand commands 
   SCmd.addCommand("help",help); 
   SCmd.addCommand("set_rx",set_rx);
+  SCmd.addCommand("set_rx_hop",set_rx_hop);
   SCmd.addCommand("set_tx",set_tx);
   SCmd.addCommand("set_tx_hex",set_tx_hex);
   SCmd.addCommand("set_tx_ascii",set_tx_ascii);
@@ -151,6 +161,32 @@ int16_t floatToTwoBytesSigned(float value, float minValue, float maxValue) {
     return intValue;
 }
 
+void set_rx_hop(){
+  isHopping = true;
+  unsigned long currentTime = millis();
+  if (currentTime - lastHopTime >= hopInterval) {
+    lastHopTime = currentTime;
+    currentHopChannelIdx = (currentHopChannelIdx + 1) % numHopChannels;
+    frequency = hopChannels[currentHopChannelIdx];
+
+    if(radio.setFrequency(frequency) == RADIOLIB_ERR_INVALID_FREQUENCY){
+      Serial.println(F("Error with channel hop"));
+    }else{
+      Serial.print(F("Change cannel: "));
+      Serial.println(frequency);
+    }
+
+  int state = radio.startReceive();
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(F("success!"));
+    } else {
+      Serial.print(F("failed, code "));
+      Serial.println(state);
+      rx_status = false;
+    }
+  }
+}
+
 void sendPacket(const String& payload) {
   // SOF: Start of Frame
   // uint16_t SOF = 0x535F;  // Using "@S" in ASCII (0x53, 0x5F)
@@ -189,6 +225,10 @@ void sendPacket(const String& payload) {
 void loop() {
 
   SCmd.readSerial();     // We don't do much, just process serial commands
+
+  if(isHopping){
+    set_rx_hop();
+  }
 
   // check if the flag is set
   if(receivedFlag && rx_status) {
@@ -270,6 +310,7 @@ void help(){
 }
 
 void set_tx(){
+  isHopping = false;
   char *arg;
   byte data[64];
   int i;
@@ -332,6 +373,7 @@ void set_tx(){
 }
 
 void set_tx_hex(){
+  isHopping = false;
   char *arg;  
   byte data[64];
   int i;
@@ -399,6 +441,7 @@ void set_tx_hex(){
 
 
 void set_tx_ascii(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();    // Get the next argument from the SerialCommand object buffer
   if (arg != NULL){
@@ -444,6 +487,7 @@ void set_tx_ascii(){
 }
 
 void set_region(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();
   region = atof(arg);
@@ -461,6 +505,7 @@ void set_region(){
 }
 
 void set_freq(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();
   frequency = atof(arg);
@@ -478,6 +523,7 @@ void set_freq(){
 }
 
 void set_chann(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();    // Get the next argument from the SerialCommand object buffer
   channel = atoi(arg);
@@ -493,7 +539,7 @@ void set_chann(){
     }    
     
     // Serial.println("Uplink channel set to " + String(channel));
-    rx_status = false;
+    rx_status = false; 
     }
     else if(channel > 63 && channel < 72){
     long freq = 903000000 + (channel - 64)*500000;
@@ -519,6 +565,7 @@ void set_chann(){
 
 
 void set_sf(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();  
   if (arg != NULL){
@@ -545,6 +592,7 @@ void set_sf(){
 }
 
 void set_cr(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();  
   if (arg != NULL){
@@ -571,6 +619,7 @@ void set_cr(){
 }
 
 void set_bw(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();    // Get the next argument from the SerialCommand object buffer
   int bwRefResp = bwReference; //save the previous data 
@@ -663,6 +712,7 @@ void set_bw(){
 }
 
 void set_op(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();  
   if (arg != NULL){
@@ -703,6 +753,7 @@ byte nibble(char c)
 }
 
 void set_sw(){
+  isHopping = false;
   char *arg;  
   byte data;
   int i;
@@ -732,6 +783,7 @@ void set_sw(){
 }
 
 void set_pl(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next();  
   if (arg != NULL){
@@ -759,6 +811,7 @@ void set_pl(){
 }
 
 void set_rx(){
+  isHopping = false;
   char *arg;  
   arg = SCmd.next(); 
   if (arg != NULL){
