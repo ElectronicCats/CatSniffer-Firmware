@@ -187,15 +187,18 @@ void set_rx_hop(){
   }
 }
 
+union {
+  float f;
+  byte b[4];
+} packet;
+
+
 void sendPacket(const String& payload) {
   // SOF: Start of Frame
-  // uint16_t SOF = 0x535F;  // Using "@S" in ASCII (0x53, 0x5F)
-  // Serial.write(highByte(SOF));
-  // Serial.write(lowByte(SOF));
   Serial.write("@S");
 
   // Packet length
-  uint16_t packetLength = payload.length() + 4;  // 4 bytes for RSSI and SNR
+  uint16_t packetLength = payload.length();
   Serial.write(highByte(packetLength));
   Serial.write(lowByte(packetLength));
 
@@ -206,20 +209,19 @@ void sendPacket(const String& payload) {
 
   // RSSI
   float rssi = radio.getRSSI();
-  //Serial.write(rssi);
-  int16_t rssiValue = floatToTwoBytesSigned(rssi, -120.0, 0.0);
-  Serial.write(highByte(rssiValue));
-  Serial.write(lowByte(rssiValue));
+  packet.f = rssi;
+  for (int i = 0; i < 4; i++) {
+    Serial.write(packet.b[i]);
+  }
 
   // SNR
-  // float snr = radio.getSNR();
-  // Serial.write(snr);
-  // int16_t snrValue = floatToTwoBytesSigned(snr, -20.0, 20.0);
-  // Serial.write(highByte(snrValue));
-  // Serial.write(lowByte(snrValue));
-
+  float snr = radio.getSNR();
+  packet.f = snr;
+  for (int i = 0; i < 4; i++) {
+    Serial.write(packet.b[i]);
+  }
   // EOF: End of Frame
-  Serial.print("@E\r\n");
+  Serial.write("@E\r\n");
 }
 
 void loop() {
