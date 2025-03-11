@@ -13,7 +13,7 @@ Upload this code to the RP2040 MCU.
 #include <stdint.h>
 #include <stdbool.h>
 
-//#define TEST; //Uncomment for testing purposes, needs serial monitor open
+#define TEST; //Uncomment for testing purposes, needs serial monitor open
 
 catsniffer_t catsniffer;
 
@@ -33,8 +33,9 @@ String devName = "CatSniffer"; //0b 09 43 61 74 53 6e 69 66 66 65 72 Define the 
 
 //Function definitions
 int8_t cmdAdvertise(uint8_t * advData, uint8_t advDataLen, uint8_t * scanRspData, uint8_t scanRspDataLen, uint8_t mode);
-
 void cmdSend(int mode, uint8_t* paddedAdvData, uint8_t* paddedScanRspData);
+void printData(uint8_t* buff, uint8_t lenbuffer);
+void listenForSerial1(unsigned long duration);
 
 void setup(){   
     //Set catsniffer parameters
@@ -105,32 +106,14 @@ void setup(){
   }
 
   uint8_t scanRspDataLen = sizeof(scanRspData) / sizeof(scanRspData[0]);
-    
-#ifdef TEST
+
+  #ifdef TEST
     Serial.println("Advertisement Data is:");
-    for(int i = 0; i < advDataLen; i++)
-    {
-      if(advData[i]>0x0F)
-        Serial.print("0x");
-      else
-        Serial.print("0x0");
-      Serial.print(advData[i],HEX);
-      Serial.print(" ");
-    }
-    Serial.print("\n");
-    
+    printData(advData,advDataLen);
+
     Serial.println("Scan Response Data is:");
-    for(int i = 0; i < scanRspDataLen; i++)
-    {
-      if(scanRspData[i]>0x0F)
-        Serial.print("0x");
-      else
-        Serial.print("0x0");
-      Serial.print(scanRspData[i],HEX); //Add , HEX again if needed
-      Serial.print(" ");
-    }
-      Serial.print("\n");
-#endif
+    printData(scanRspData,scanRspDataLen);
+  #endif
     
     //Call the Advertise Function
     int8_t error = cmdAdvertise(advData, advDataLen, scanRspData, scanRspDataLen, 0); 
@@ -155,6 +138,7 @@ void setup(){
     
 }
 
+
 void loop() {
   
 
@@ -172,7 +156,6 @@ void loop() {
 }
 
 
-
 int8_t cmdAdvertise(uint8_t * advData, uint8_t advDataLen, uint8_t * scanRspData, uint8_t scanRspDataLen, uint8_t mode) {
     if (advDataLen > 31) {
         return -1;// Error: advData too long
@@ -187,13 +170,13 @@ int8_t cmdAdvertise(uint8_t * advData, uint8_t advDataLen, uint8_t * scanRspData
     }
   
     
-#ifdef TEST
+  #ifdef TEST
     Serial.print("advDataLen: ");
     Serial.println(advDataLen);
 
     Serial.print("scanRspDataLen: ");
     Serial.println(scanRspDataLen);
-#endif
+  #endif
 
     uint8_t paddedAdvData[32]={0}; //Creat Padded Advertisement Data Array
     uint8_t paddedScanRspData[32]={0}; //Creat Padded Scan Response Data Array
@@ -222,32 +205,13 @@ int8_t cmdAdvertise(uint8_t * advData, uint8_t advDataLen, uint8_t * scanRspData
       paddedScanRspData[i] = 0;
     }
 
-#ifdef TEST
+  #ifdef TEST
     Serial.println("Padded Advertisement Data is:");
-    for(int i = 0; i < 32; i++)
-    {
-      if(paddedAdvData[i]>0x0F)
-        Serial.print("0x");
-      else
-        Serial.print("0x0");
-      Serial.print(paddedAdvData[i],HEX);
-      Serial.print(" ");
-
-    }
-      Serial.print("\n");
+    printData(paddedAdvData,32);
 
     Serial.println("Padded Scan Response Data is:");
-    for(int i = 0; i < 32; i++)
-    {
-      if(paddedScanRspData[i]>0x0F)
-        Serial.print("0x");
-      else
-        Serial.print("0x0");
-      Serial.print(paddedScanRspData[i],HEX);
-      Serial.print(" ");
-    }
-    Serial.print("\n");
-#endif
+    printData(paddedScanRspData,32);
+  #endif
 
     //Call the send function
     cmdSend(mode,paddedAdvData,paddedScanRspData); 
@@ -276,28 +240,19 @@ void cmdSend(int mode, uint8_t * paddedAdvData, uint8_t * paddedScanRspData) {
         cmdByteList[i] = paddedScanRspData[i-34];
     }
     // For Testing
-#ifdef TEST
+  #ifdef TEST
     Serial.println("Command Byte List Data is:");
-    for(int i = 0; i < 66; i++)
-    {
-      if(cmdByteList[i]>0x0F)
-        Serial.print("0x");
-      else
-        Serial.print("0x0");
-      Serial.print(cmdByteList[i],HEX);
-      Serial.print(" ");
-    }
-      Serial.print("\n");
-#endif
+    printData(cmdByteList,66);
+  #endif
     
     uint8_t cmdByteListLen = sizeof(cmdByteList) / sizeof(cmdByteList[0]);
 
     int b0=(cmdByteListLen+3)/3; //Create the valuo for cmd[0]'b' which is the lenght of the command 
 
-#ifdef TEST
+  #ifdef TEST
     Serial.println("b0: ");
     Serial.println(b0);
-#endif
+  #endif
 
     char cmd[cmdByteListLen+1]; //Create the command array with lenght of the byte list + 1 for b0
 
@@ -309,7 +264,7 @@ void cmdSend(int mode, uint8_t * paddedAdvData, uint8_t * paddedScanRspData) {
 
     int cmdLen =  sizeof(cmd) / sizeof(cmd[0]); //Get the cmd length
 
-#ifdef TEST
+  #ifdef TEST
     //For testing only
     Serial.println("Command Data is:");
     for(int i = 0; i < cmdLen; i++)
@@ -322,7 +277,7 @@ void cmdSend(int mode, uint8_t * paddedAdvData, uint8_t * paddedScanRspData) {
       Serial.print(" ");
     }
       Serial.print("\n");
-#endif
+  #endif
 
     //Create a variable to hold the mesage and calculate the length of that message using the library function
     int msgLen = base64_enc_len(cmdLen);
@@ -332,7 +287,7 @@ void cmdSend(int mode, uint8_t * paddedAdvData, uint8_t * paddedScanRspData) {
 
 
     //For testing only
-#ifdef TEST
+  #ifdef TEST
     Serial.println("MSG Data is:");
     for(int i = 0; i < msgLen; i++)
     {
@@ -344,7 +299,7 @@ void cmdSend(int mode, uint8_t * paddedAdvData, uint8_t * paddedScanRspData) {
       Serial.print(" ");
     }
     Serial.print("\n");
-#endif
+  #endif
     
      
     // Write the encoded message to serial
@@ -382,13 +337,23 @@ void changeBand(catsniffer_t *cs, unsigned long newBand){
     }
 
   return;
-  }
+}
+
 
 void listenForSerial1(unsigned long duration) {
-unsigned long startTime = millis();
-while (millis() - startTime < duration) {
+  unsigned long startTime = millis();
+  while (millis() - startTime < duration) {
   if (Serial1.available()) {
     int incomingByte = Serial1.read(); //read serial and save it to a variable
    }
   }
+}
+
+void printData(uint8_t* buff, uint8_t bufLen) {
+  char tmp[5];
+  for (int i = 0; i < bufLen; i++) {
+    sprintf(tmp, "0x%.2X",buff[i]);
+    Serial.print(tmp); Serial.print(" ");
+  }
+  Serial.println();
 }
