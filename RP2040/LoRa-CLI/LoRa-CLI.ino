@@ -157,7 +157,7 @@ void loop() {
     receivedFlag = false;
 
     // you can read received data as an Arduino String
-    int recvLen = radio.getPacketLength()
+    int recvLen = radio.getPacketLength();
     byte byteArr[recvLen];
     int state = radio.readData(byteArr, recvLen);
 
@@ -672,7 +672,6 @@ byte nibble(char c)
 }
 
 void set_sw(){
-  isHopping = false;
   char *arg;  
   byte data;
 
