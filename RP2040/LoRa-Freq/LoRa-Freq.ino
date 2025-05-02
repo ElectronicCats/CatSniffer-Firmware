@@ -131,6 +131,9 @@ void loop() {
   // perform scan over the entire frequency range
   radioCtx.freq = radioCtx.freqStart;
   while((radioCtx.freq <= radioCtx.freqEnd) && runningScan) {
+    if(!Serial){
+      break;
+    }
     Serial.print("FREQ ");
     Serial.println(radioCtx.freq, 2);
 

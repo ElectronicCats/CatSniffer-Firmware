@@ -193,19 +193,16 @@ union {
 } packet;
 
 
-void sendPacket(const String& payload) {
+void sendPacket(uint8_t* payload, uint16_t payloadLength) {
   // SOF: Start of Frame
   Serial.write("@S");
 
   // Packet length
-  uint16_t packetLength = payload.length();
-  Serial.write(highByte(packetLength));
-  Serial.write(lowByte(packetLength));
+  Serial.write(highByte(payloadLength));
+  Serial.write(lowByte(payloadLength));
 
   // Payload
-  for (size_t i = 0; i < payload.length(); i++) {
-    Serial.write(payload[i]);
-  }
+  Serial.write(payload, payloadLength);
 
   // RSSI
   float rssi = radio.getRSSI();
@@ -242,17 +239,19 @@ void loop() {
     receivedFlag = false;
 
     // you can read received data as an Arduino String
-    String str;
-    int state = radio.readData(str);
-
+    // String str;
+    // int state = radio.readData(str);
+    int recvLen = radio.getPacketLength();
+    byte byteArr[recvLen];
+    int state = radio.readData(byteArr, recvLen);
     // you can also read received data as byte array
     /*
       byte byteArr[8];
-      int state = radio.readData(byteArr, 8);
+      
     */
 
     if (state == RADIOLIB_ERR_NONE) {
-      sendPacket(str);
+      sendPacket(byteArr, recvLen);
       digitalWrite(LED1, 1);
       digitalWrite(LED2, 1);
       digitalWrite(LED3, 1);
@@ -758,29 +757,25 @@ void set_sw(){
   isHopping = false;
   char *arg;  
   byte data;
-  int i;
 
-  arg = SCmd.next();    // Get the next argument from the SerialCommand object buffer
+  arg = SCmd.next();
   if(arg != NULL){
+      char *endptr;
+      long val = strtol(arg, &endptr, 0);
       
-      if((arg[0] > 64 && arg[0]< 71 || arg[0] > 47 && arg[0]< 58) && (arg[1] > 64 && arg[1]< 71 || arg[1] > 47 && arg[1]< 58) && arg[2] == 0){
-  
-          data = 0;
-          data = nibble(*(arg))<<4;
-          data = data|nibble(*(arg + 1));
+      if (*endptr == '\0' && val >= 0 && val <= 0xFF) {
+          data = (byte)val;
           if (radio.setSyncWord(data) != RADIOLIB_ERR_NONE) {
-            Serial.println(F("Unable to set sync word!"));
-            return;
+              Serial.println(F("Unable to set sync word!"));
+              return;
           }
-          // Serial.println("Sync word set to 0x" + String(data));
+          syncWord = data;
+      } else {
+          Serial.println(F("Invalid sync word. Use a hexadecimal byte (e.g. 2B or 0x2B)"));
+          return;
       }
-      else{
-        Serial.println("Use yy value. The value yy represents any pair of hexadecimal digits. ");
-        return;
-      }
-  } 
-  else {
-    Serial.println("No argument"); 
+  } else {
+    Serial.println(F("No argument")); 
   }
 }
 
