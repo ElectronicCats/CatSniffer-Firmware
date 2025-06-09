@@ -24,17 +24,17 @@
 #define LED2 (26)
 #define LED3 (28)
 
-// #define VERBOSE
+#define FIRMWARE_VERSION "0.2.0"
 
 uint8_t LEDs[3] = { LED1, LED2, LED3 };
 
-// SX1262 has the following connections:
-// NSS pin:   17
-// DIO1 pin:  5
-// NRST pin:  24
-// BUSY pin:  4
 SX1262 radio = new Module(17, 5, 24, 4);
 SerialCommand SCmd;
+
+typedef enum {
+  CAD_FIXED,
+  CAD_RANGE,
+} cad_mode_t;
 
 struct RadioContext {
   float frequency;
@@ -44,34 +44,34 @@ struct RadioContext {
   byte syncWord;
   int preambleLength;
   int outputPower;
+
+  // Frequency range
+  int start;
+  int end;
+  float step;
+  cad_mode_t mode;
 };
 
 RadioContext radioCtx;
-
-// whether we are receiving, or scanning
-bool receiving = false;
-bool runningScan = false;
-// flag to indicate that a packet was successfully printed
 bool recivedPacket = false;
+bool receiving = false;
+volatile bool scanFlag = false;
 const unsigned long interval = 5000;    // 5 s interval to send message
 unsigned long previousMillis = 0;  // will store last time message sent
 
-bool hoppChannel = true;
-float startFreq = 150;
-float endFreq = 960;
-
-// flag to indicate that a packet was detected or CAD timed out
-volatile bool scanFlag = false;
-
 void setFlag(void) {
-  // something happened, set the flag
   scanFlag = true;
 }
 
-void setup() {
-  Serial.begin(921600);
-  while (!Serial);
-  
+static void startRadioCAD(){
+  int state = radio.startChannelScan();
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.print(F("Failed, code "));
+    Serial.println(state);
+  }
+}
+
+static void configureGPIO(){
   pinMode(CTF1, OUTPUT);
   pinMode(CTF2, OUTPUT);
   pinMode(CTF3, OUTPUT);
@@ -87,37 +87,77 @@ void setup() {
   digitalWrite(LED1, 0);
   digitalWrite(LED2, 0);
   digitalWrite(LED3, 0);
+}
 
-  SCmd.addCommand("set_freq", cmdSetFrequency);
+void help(){
+  Serial.print("Firmware: ");
+  Serial.println(FIRMWARE_VERSION);
+  Serial.println("Available commands are:");
+  Serial.print("set_freq\t- ");
+  Serial.println("Set the frequency in range of 150/960 MHz: Default 915");
+  Serial.print("set_efreq\t- ");
+  Serial.println("Set the end frequency in range of 150/960 MHz: Default 915");
+  Serial.print("set_sf\t\t- ");
+  Serial.println("Set the spread factor. Default: 7");
+  Serial.print("set_bw\t\t- ");
+  Serial.println("Set the bandwith value. Options: (7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125, 250, 500) kHz: Default 125");
+  Serial.print("set_cr\t\t- ");
+  Serial.println("Set the coding rate. Default: 5");
+  Serial.print("set_sw\t\t- ");
+  Serial.println("Set the sync Word: Default: 0x12");
+  Serial.print("set_pl\t\t- ");
+  Serial.println("Set the preamble length: Default: 10");
+
+  Serial.print("set_step\t- ");
+  Serial.println("Set the step increment for frequency range; Default 0.1");
+  Serial.print("set_fixed\t- ");
+  Serial.println("Set fixed frequency CAD; Default");
+  Serial.print("set_range\t- ");
+  Serial.println("Set Range CAD");
+  
+  Serial.println("get_config\t - Show the configuration of the radio");
+  Serial.println("get_state \t - Show the state of the scann");
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  configureGPIO();
+  
   SCmd.addCommand("set_sf", cmdSetSpreadFactor);
   SCmd.addCommand("set_bw", cmdSetBandWidth);
   SCmd.addCommand("set_cr", cmdSetCodingRate);
   SCmd.addCommand("set_sw", cmdSetSyncWord);
   SCmd.addCommand("set_pl", cmdSetPreambleLength);
-  SCmd.addCommand("set_op", cmdSetOutputPower);
-  SCmd.addCommand("start_fixed", cmdSetScanningStart);
-  SCmd.addCommand("stop_fixed", cmdSetScanningStop);
-  // TODO: Fix the frequency when stop
-  SCmd.addCommand("start_hop", cmdStartChannelHopp);
-  SCmd.addCommand("stop_hop", cmdStopChannelHopp);
-  
+
+  SCmd.addCommand("set_freq", cmdSetFrequency);
+  SCmd.addCommand("set_efreq", cmdSetFrequencyEnd);
+  SCmd.addCommand("set_step", cmdSetStep);
+
+  SCmd.addCommand("set_fixed", cmdSetModeFixed);
+  SCmd.addCommand("set_range", cmdSetModeRange);
+
+  SCmd.addCommand("get_state", cmdGetState);
   SCmd.addCommand("get_config", cmdGetConfiguration);
-  SCmd.addCommand("get_state", cmdGetScanning);
   SCmd.addCommand("help", help);
   
-
   SCmd.setDefaultHandler(unrecognized);
-  // initialize SX1262 with default settings
-  radioCtx.frequency = 433;//903.9;
-  radioCtx.bandWidth = 250;
+
+  radioCtx.frequency = 915;
+  radioCtx.bandWidth = 125;
   radioCtx.spreadFactor = 7;
   radioCtx.codingRate = 5;
-  radioCtx.syncWord = 0x34;
-  radioCtx.outputPower = 20;
+  radioCtx.syncWord = 0x12;
+  radioCtx.outputPower = 10;
   radioCtx.preambleLength = 10;
 
-  startFreq = 433;
-  
+  radioCtx.start = radioCtx.frequency;
+  radioCtx.end = radioCtx.frequency;
+  radioCtx.step = 0.1;
+  radioCtx.mode = CAD_FIXED;
+
+  // initialize SX1262 with default settings
   Serial.print(F("[SX1262] Initializing ... "));
   int state = radio.begin(radioCtx.frequency, radioCtx.bandWidth, radioCtx.spreadFactor, radioCtx.codingRate, radioCtx.syncWord, radioCtx.outputPower, radioCtx.preambleLength, 0, false);
   if (state == RADIOLIB_ERR_NONE) {
@@ -125,187 +165,64 @@ void setup() {
   } else {
     Serial.print(F("failed, code "));
     Serial.println(state);
-    while (true)
-      ;
+    while (true) { delay(10); }
   }
 
   radio.setRfSwitchPins(21, 20);
-
-  // set the function that will be called
-  // when LoRa packet or timeout is detected
   radio.setDio1Action(setFlag);
-  startRadioScanning();
-}
 
-void resetScan(){
-  if (!receiving && runningScan) {
-    #ifdef VERBOSE
-    Serial.print(F("[SX1262] Starting scan for LoRa preamble ... "));
-    #endif
-
-    if(hoppChannel){
-      radioCtx.frequency+=0.1;
-    
-      if(radioCtx.frequency > endFreq){
-        radioCtx.frequency = startFreq;
-      }
-      handleErrorCodePrint(radio.setFrequency(radioCtx.frequency));
-    }else{
-      handleErrorCodePrint(radio.setFrequency(startFreq));
-    }
-    
-    int state = radio.startChannelScan();
-    handleErrorCodePrint(state);
-  }
-}
-
-void loop() {
-  SCmd.readSerial();
-  // check if the flag is set
-  if (scanFlag && runningScan) {
-    SCmd.readSerial();
-    int state = RADIOLIB_ERR_NONE;
-
-    // reset flag
-    scanFlag = false;
-
-    // check ongoing reception
-    if (receiving) {
-      // DIO triggered while reception is ongoing
-      // that means we got a packet
-      // you can read received data as an Arduino String
-      String str;
-      state = radio.readData(str);
-
-      if (state == RADIOLIB_ERR_NONE) {
-        recivedPacket = true;
-        // packet was successfully received
-        Serial.println(F("[SX1262] Received packet!"));
-
-        // print data of the packet
-        Serial.print(F("[SX1262] Data:\t\t"));
-        Serial.println(str);
-
-        Serial.print(F("[SX1262] Freq:\t\t"));
-        Serial.println(radioCtx.frequency, 2);
-
-        // print RSSI (Received Signal Strength Indicator)
-        Serial.print(F("[SX1262] RSSI:\t\t"));
-        Serial.print(radio.getRSSI());
-        Serial.println(F(" dBm"));
-
-        // print SNR (Signal-to-Noise Ratio)
-        Serial.print(F("[SX1262] SNR:\t\t"));
-        Serial.print(radio.getSNR());
-        Serial.println(F(" dB"));
-
-        // print frequency error
-        Serial.print(F("[SX1262] Frequency error:\t"));
-        Serial.print(radio.getFrequencyError());
-        Serial.println(F(" Hz"));
-
-      } else {
-        handleErrorCodePrint(state);
-      }
-
-      // reception is done now
-      receiving = false;
-      recivedPacket = false;
-
-    } else {
-      // check CAD result
-      state = radio.getChannelScanResult();
-
-      if (state == RADIOLIB_LORA_DETECTED) {
-        // LoRa packet was detected
-        state = radio.startReceive();
-        handleErrorCodePrint(state);
-        // set the flag for ongoing reception
-        receiving = true;
-
-      }else {
-        handleErrorCodePrint(state);
-      }
-    }
-
-    // if we're not receiving, start scanning again
-    resetScan();
-  }
-  if(receiving){
-    if(millis() - previousMillis > interval){
-      previousMillis = millis(); 
-      if(!recivedPacket){
-        recivedPacket = false;
-        receiving = false;
-        resetScan();
-      }
-    }
-  }
-}
-
-void startRadioScanning(){
   // start scanning the channel
-  #ifdef VERBOSE
-  Serial.print(F("[SX1262] Starting scan for LoRa preamble ... "));
-  #endif
-  int state = radio.startChannelScan();
-  if (state == RADIOLIB_ERR_NONE) {
-    runningScan = true;
-    resetScan();
-  } else {
-    Serial.print(F("failed, code "));
-    Serial.println(state);
-  }
+  Serial.println(F("[SX1262] Starting scan for LoRa preamble"));
+  startRadioCAD();
 }
 
-void cmdSetPreambleLength(){
+void cmdSetFrequency(){
   char *arg;
   arg = SCmd.next();
   if(arg != NULL){
-    int tmp_value = atoi(arg);
-    if(radio.setPreambleLength(tmp_value) == RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH){
-      Serial.println(F("Selected preamble length is invalid for this module!"));
+    float tmp_value = atof(arg);
+    if(radio.setFrequency(tmp_value) == RADIOLIB_ERR_INVALID_FREQUENCY){
+      Serial.println(F("Selected frequency is invalid for this module!"));
       return;
     }
-    Serial.println("Preamble Length set to " + String(tmp_value));
-    radioCtx.preambleLength = tmp_value;
+    radioCtx.start = tmp_value;
+    radioCtx.frequency = tmp_value;
+    Serial.println("Frequency set to " + String(tmp_value) + " MHz");
+    startRadioCAD();
   }
 }
 
-void cmdSetSyncWord(){
+void cmdSetStep(){
   char *arg;
-  byte syncWord;
   arg = SCmd.next();
   if(arg != NULL){
-    if ((arg[0] > 64 && arg[0] < 71 || arg[0] > 47 && arg[0] < 58) && (arg[1] > 64 && arg[1] < 71 || arg[1] > 47 && arg[1] < 58) && arg[2] == 0){
-      syncWord = 0;
-      syncWord = nibble(*(arg)) << 4;
-      syncWord = syncWord | nibble(*(arg + 1));
-      if (radio.setSyncWord(syncWord) != RADIOLIB_ERR_NONE) {
-        Serial.println(F("Unable to set sync word!"));
-        return;
-      }
-      Serial.print("Sync word set to 0x");
-      Serial.println(syncWord, HEX);
-      radioCtx.syncWord = syncWord;
-    }else{
-      Serial.println("Use yy value. The value yy represents any pair of hexadecimal digits. ");
+    float tmp_value = atof(arg);
+    if (tmp_value < 0 || tmp_value > 10){
+      Serial.println("Step out of parameters, please use a value between 0 and 10 MHz");
       return;
     }
+    radioCtx.step = tmp_value;
+    Serial.println("Frequency step set to " + String(tmp_value) + " MHz");
   }
 }
 
-void cmdSetOutputPower(){
+void cmdSetFrequencyEnd(){
   char *arg;
   arg = SCmd.next();
   if(arg != NULL){
-    int tmp_value = atoi(arg);
-    if(radio.setOutputPower(tmp_value) == RADIOLIB_ERR_INVALID_CODING_RATE){
-      Serial.println(F("Selected output power is invalid for this module!"));
+    float tmp_value = atof(arg);
+    if (tmp_value < 150 || tmp_value > 960){
+      Serial.println("Frequency out of parameters, please use a value between 150 and 960 MHz");
       return;
     }
-    Serial.println("Output Power set to " + String(tmp_value));
-    radioCtx.outputPower = tmp_value;
+    if (tmp_value < radioCtx.frequency){
+      Serial.print("Frequency out of parameters, please use a value greater thatn: ");
+      Serial.println(String(radioCtx.frequency) + " MHz");
+      return;
+    }
+    radioCtx.end = tmp_value;
+    Serial.println("Frequency end set to " + String(tmp_value) + " MHz");
+    startRadioCAD();
   }
 }
 
@@ -351,18 +268,70 @@ void cmdSetBandWidth(){
   }
 }
 
-void cmdSetFrequency(){
+void cmdSetPreambleLength(){
   char *arg;
   arg = SCmd.next();
   if(arg != NULL){
-    float tmp_value = atof(arg);
-    if(radio.setFrequency(tmp_value) == RADIOLIB_ERR_INVALID_FREQUENCY){
-      Serial.println(F("Selected frequency is invalid for this module!"));
+    int tmp_value = atoi(arg);
+    if(radio.setPreambleLength(tmp_value) == RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH){
+      Serial.println(F("Selected preamble length is invalid for this module!"));
       return;
     }
-    radioCtx.frequency = tmp_value;
-    Serial.println("Frequency set to " + String(tmp_value) + " MHz");
+    Serial.println("Preamble Length set to " + String(tmp_value));
+    radioCtx.preambleLength = tmp_value;
   }
+}
+
+void cmdSetSyncWord(){
+  char *arg;  
+  byte data;
+  arg = SCmd.next();
+  if(arg != NULL){
+    char *endptr;
+    long val = strtol(arg, &endptr, 0);
+    
+    if (*endptr == '\0' && val >= 0 && val <= 0xFF) {
+      data = (byte)val;
+      if (radio.setSyncWord(data) != RADIOLIB_ERR_NONE) {
+          Serial.println(F("Unable to set sync word!"));
+          return;
+      }
+      radioCtx.syncWord = data;
+    } else {
+      Serial.println(F("Invalid sync word. Use a hexadecimal byte (e.g. 2B or 0x2B)"));
+      return;
+    }
+  }
+}
+
+void cmdSetModeFixed(){
+  Serial.println("Mode changed to Fixed");
+  radioCtx.mode = CAD_FIXED;
+  resetScan();
+  digitalWrite(LED1, 1);
+  digitalWrite(LED2, 0);
+  digitalWrite(LED3, 0);
+}
+
+void cmdSetModeRange(){
+  Serial.println("Mode changed to Range");
+  radioCtx.mode = CAD_RANGE;
+  resetScan();
+  digitalWrite(LED1, 0);
+  digitalWrite(LED2, 1);
+  digitalWrite(LED3, 0);
+}
+
+void cmdGetState(){
+  Serial.println("Mode:\t");
+  Serial.print(radioCtx.mode);
+  Serial.println(radioCtx.mode ? "- Range" : "- Fixed");
+  Serial.print("Start:\t");
+  Serial.println(radioCtx.start);
+  Serial.print("End:\t");
+  Serial.println(radioCtx.end);
+  Serial.print("Step:\t");
+  Serial.println(radioCtx.step);
 }
 
 void cmdGetConfiguration(){
@@ -377,102 +346,134 @@ void cmdGetConfiguration(){
   Serial.println(radioCtx.syncWord, HEX);
   Serial.println("Preamble Length = " + String(radioCtx.preambleLength));
   Serial.println("Output Power = " + String(radioCtx.outputPower));
-}
-
-void cmdSetScanningStart(){
-  if(!runningScan){
-    startRadioScanning();
-  }
-}
-
-void cmdSetScanningStop(){
-  if(runningScan){
-    scanFlag = false;
-    runningScan = false;
-    receiving = false;
-  }
-}
-
-void cmdGetScanning(){
-  Serial.print("State:" );
-  Serial.println(runningScan?"Running" : "Stopped");
-  Serial.println(hoppChannel?"Channel Range" : "Fixed");
-}
-
-void cmdStopChannelHopp(){
-   if(hoppChannel){
-    hoppChannel = false;
-    handleErrorCodePrint(radio.setFrequency(startFreq));
-    startRadioScanning();
-  }
-}
-
-void cmdStartChannelHopp(){
-   if(!hoppChannel){
-    hoppChannel = true;
-    handleErrorCodePrint(radio.setFrequency(startFreq));
-    startRadioScanning();
-  }
-}
-
-
-void help(){
-  Serial.println("Available commands are:");
-  Serial.print("set_freq ");
-  Serial.println("Set the frequency in range of 150/960 MHz: Default 903.9");
-  Serial.print("set_sf ");
-  Serial.println("Set the spread factor. Default: 7");
-  Serial.print("set_bw ");
-  Serial.println("Set the bandwith value. Options: (7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125, 250, 500) kHz: Default 250");
-  Serial.print("set_cr ");
-  Serial.println("Set the coding rate. Default: 5");
-  Serial.print("set_sw ");
-  Serial.println("Set the sync Word: Default: 0x34");
-  Serial.print("set_pl ");
-  Serial.println("Set the preamble length: Default: 10");
-  Serial.print("set_op ");
-  Serial.println("Set the output power. Default: 20");
-  Serial.println("get_config Show the configuration of the radio");
+  // State
+  Serial.println("Frequency range: ");
+  cmdGetState();
 }
 
 void unrecognized(const char *command) {
   Serial.println("Command not found, type help to get the valid commands");
 }
 
+static void showPacketDetails(){
+  // DIO triggered while reception is ongoing
+  // that means we got a packet
 
-void handleErrorCodePrint(int16_t state){
-  switch (state)
-  {
-  case RADIOLIB_ERR_NONE:
-     #ifdef VERBOSE
-    Serial.println(F("success!"));
-    #endif
-    break;
-  case RADIOLIB_CHANNEL_FREE:
-    #ifdef VERBOSE
-    Serial.println(F("[SX1262] Channel is free!"));
-    #endif
-    break;
-  case RADIOLIB_ERR_CRC_MISMATCH:
-    Serial.println(F("[SX1262] CRC Failed"));
-    break;
-  default:
-    Serial.print(F("failed, code "));
+  // you can read received data as an Arduino String
+  uint16_t packetLen = radio.getPacketLength();
+  byte bytePacket[packetLen];
+  int state = radio.readData(bytePacket, packetLen);
+
+  if (state == RADIOLIB_ERR_NONE) {
+    recivedPacket = true;
+    digitalWrite(LED3, 1);
+    // packet was successfully received
+    Serial.println(F("[SX1262] Received packet!"));
+
+    // print data of the packet
+    Serial.print(F("[SX1262] Data:\t\t"));
+    Serial.write(bytePacket, packetLen);
+    Serial.println();
+
+    // print RSSI (Received Signal Strength Indicator)
+    Serial.print(F("[SX1262] RSSI:\t\t"));
+    Serial.print(radio.getRSSI());
+    Serial.println(F(" dBm"));
+
+    // print SNR (Signal-to-Noise Ratio)
+    Serial.print(F("[SX1262] SNR:\t\t"));
+    Serial.print(radio.getSNR());
+    Serial.println(F(" dB"));
+
+    // print frequency error
+    Serial.print(F("[SX1262] Freq Error:\t"));
+    Serial.print(radio.getFrequencyError());
+    Serial.println(F(" Hz"));
+
+    Serial.print(F("[SX1262] Frequency:\t"));
+    Serial.print(radioCtx.frequency);
+    Serial.println(F(" Hz"));
+
+  } else {
+    // some other error occurred
+    Serial.print(F("[SX1262] Failed, code "));
     Serial.println(state);
-    break;
+
   }
+  digitalWrite(LED3, 0);
 }
 
-byte nibble(char c)
-{
-  if (c >= '0' && c <= '9')
-    return c - '0';
+void resetScan(){
+  if (receiving) return;
 
-  if (c >= 'a' && c <= 'f')
-    return c - 'a' + 10;
+  receiving = false;
+  scanFlag = false;
+  recivedPacket = false;
+  digitalWrite(LED3, 0);
 
-  if (c >= 'A' && c <= 'F')
-    return c - 'A' + 10;
+  if (radioCtx.mode == CAD_RANGE){
+    radioCtx.frequency += radioCtx.step;
+    if(radioCtx.frequency > radioCtx.end){
+      radioCtx.frequency = radioCtx.start;
+    }
 
-  return 0;  // Not a valid hexadecimal character
+    int state = radio.setFrequency(radioCtx.frequency);
+    if (state != RADIOLIB_ERR_NONE) {
+      Serial.print(F("[SX1262] Failed, code "));
+      Serial.println(state);
+    }
+  }
+
+  startRadioCAD();
+}
+
+void loop() {
+  SCmd.readSerial();
+
+  if(scanFlag) {
+    SCmd.readSerial();
+    int state = RADIOLIB_ERR_NONE;
+
+    // reset flag
+    scanFlag = false;
+
+    // check ongoing reception
+    if(receiving) {
+      showPacketDetails();
+      // reception is done now
+      receiving = false;
+      digitalWrite(LED3, 0);
+    } else {
+      // check CAD result
+      state = radio.getChannelScanResult();
+
+      if (state == RADIOLIB_LORA_DETECTED) {
+        state = radio.startReceive();
+        if (state != RADIOLIB_ERR_NONE) {
+          Serial.print(F("[SX1262] Failed, code "));
+          Serial.println(state);
+        }
+        // set the flag for ongoing reception
+        receiving = true;
+        digitalWrite(LED3, 1);
+      } else if (state == RADIOLIB_CHANNEL_FREE) {} else {
+        // some other error occurred
+        Serial.print(F("[SX1262] Failed, code "));
+        Serial.println(state);
+      }
+    }
+
+    resetScan();
+  }
+  if(receiving && radioCtx.mode == CAD_RANGE){
+    if(millis() - previousMillis > interval){
+      previousMillis = millis(); 
+      if(!recivedPacket){
+        Serial.println("No packet reset");
+        receiving = false;
+        recivedPacket = false;
+        resetScan();
+      }
+    }
+  } 
 }

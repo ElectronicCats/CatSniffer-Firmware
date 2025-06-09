@@ -36,7 +36,7 @@ unsigned long hopInterval = 0.16; // Seconds
 
 SerialCommand SCmd;
 
-float fwVersion= 0.1;
+float fwVersion= 0.2;
 float region = 915;
 float frequency = 915;
 int spreadFactor = 7;
