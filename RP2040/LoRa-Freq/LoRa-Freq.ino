@@ -25,6 +25,8 @@
 #define FREQ_RANGE_END 960
 #define SAMPLE_RATE 2048
 
+#define FIRMWARE_VERSION "0.1.0"
+
 #define LED1 (27)
 #define LED2 (26)
 #define LED3 (28)
@@ -238,6 +240,8 @@ void cmdGetConfiguration(){
 }
 
 void help(){
+  Serial.print("FIRMWARE: ");
+  Serial.println(FIRMWARE_VERSION);
   Serial.println("Available commands are:");
   Serial.print("set_start_freq ");
   Serial.println("Set the frequency start: Default " + String(FREQ_RANGE_START));
