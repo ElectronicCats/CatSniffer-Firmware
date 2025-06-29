@@ -1,0 +1,132 @@
+/ {
+    aliases {
+        pin-reset = &pinreset;
+        pin-reset-viewer = &pin_reset_viewer;
+        pin-boot = &pin_boot;
+        pin-button = &pin_button;
+        led0 = &led_0;
+        led1 = &led_1;
+        led2 = &led_2;
+        ctf1 = &ctf1;
+        ctf2 = &ctf2;
+        ctf3 = &ctf3;
+        cjtag0 = &cjtag0;
+        cjtag1 = &cjtag1;
+        cjtag2 = &cjtag2;
+        cjtag3 = &cjtag3;
+    };
+
+    chosen {
+		uart,passthrough = &uart0;
+	};
+
+    gpio_keys: buttons {
+        compatible = "gpio-keys";
+
+        pin_button: button0 {
+            gpios = <&gpio0 2 GPIO_PULL_UP>;
+            label = "Pin_Button";
+        };
+
+        pin_boot: button1 {
+            gpios = <&gpio0 2 GPIO_PULL_UP>;
+            label = "Pin_Boot";
+        };
+
+        pin_reset_viewer: button2 {
+            gpios = <&gpio0 15 GPIO_ACTIVE_HIGH>;
+            label = "Pin_Reset_Viewer";
+        };
+
+        pinreset: resetpin {
+            gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>; 
+            label = "Pin_Reset";
+        };
+
+        cjtag0: cjtag0 {
+            gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>;
+            label = "CJTAG11";
+        };
+
+        cjtag1: cjtag1 {
+            gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>;
+            label = "CJTAG12";
+        };
+
+        cjtag2: cjtag2 {
+            gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
+            label = "CJTAG13";
+        };
+
+        cjtag3: cjtag3 {
+            gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+            label = "CJTAG14";
+        };
+
+
+    };
+
+    leds {
+        compatible = "gpio-leds";
+
+        led_0: led0 {
+            gpios = <&gpio0 27 GPIO_ACTIVE_HIGH>;
+            label = "LED1";
+        };
+
+        led_1: led1 {
+            gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+            label = "LED2";
+        };
+
+        led_2: led2 {
+            gpios = <&gpio0 28 GPIO_ACTIVE_HIGH>;
+            label = "LED3";
+        };
+    };
+
+    rf_ctrl: rfctrl {
+        compatible = "gpio-leds";  // Treated as outputs
+
+        ctf1: rfout1 {
+            gpios = <&gpio0 8 GPIO_ACTIVE_HIGH>;
+            label = "CTF1";
+        };
+
+        ctf2: rfout2 {
+            gpios = <&gpio0 9 GPIO_ACTIVE_HIGH>;
+            label = "CTF2";
+        };
+
+        ctf3: rfout3 {
+            gpios = <&gpio0 10 GPIO_ACTIVE_HIGH>;
+            label = "CTF3";
+        };
+    };   
+};
+
+&zephyr_udc0 {
+	cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Zephyr USB CDC-ACM";
+	};
+};
+
+&uart0 {
+	current-speed = <921600>;  
+	status = "okay";
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+};
+
+&pinctrl {
+	uart0_default: uart0_default {
+		group1 {
+			pinmux = <UART0_TX_P0>;
+		};
+		group2 {
+			pinmux = <UART0_RX_P1>;
+			input-enable;
+		};
+	};
+};
