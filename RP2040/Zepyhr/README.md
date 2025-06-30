@@ -29,7 +29,13 @@ export ZEPHYR_SDK_INSTALL_DIR=$HOME/zephyr-sdk-0.17.0
 export ZEPHYR_BASE=$HOME/zephyrproject/zephyr
 ```
 
-Since this project is out from the zephyr project
+## Flash 
+
+In order to flash the firmware you just need to copy the .uf2 file in build directory to the rp2040
+
+```bash
+cp build/zephyr/zephyr.uf2 /Volumes/RPI-RP2
+```
 
 ## Examples
 
