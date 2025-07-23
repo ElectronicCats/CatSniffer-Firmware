@@ -785,21 +785,13 @@ void set_pl(){
   arg = SCmd.next();  
   if (arg != NULL){
     preambleLength = atoi(arg);
-    if(preambleLength > -1 || preambleLength < 65536){
-      Serial.println("Error setting the preamble length");
-      Serial.println("Value must be between 0 and 65535");
+    if (radio.setPreambleLength(preambleLength) == RADIOLIB_ERR_INVALID_CODING_RATE) {
+      Serial.println(F("Selected preamble length is invalid for this module!"));
       return;
     }
-    else{
 
-        if (radio.setPreambleLength(preambleLength) == RADIOLIB_ERR_INVALID_CODING_RATE) {
-          Serial.println(F("Selected preamble length is invalid for this module!"));
-          return;
-        }
-
-      Serial.println("Preamble length set to " + String(preambleLength));
-      rx_status = false;
-    }
+    Serial.println("Preamble length set to " + String(preambleLength));
+    rx_status = false;
 
   } 
   else {
