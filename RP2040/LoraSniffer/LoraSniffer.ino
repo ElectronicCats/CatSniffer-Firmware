@@ -1,7 +1,12 @@
 /*
   LoRaSniffer - Use LoRa for communication with the SX1262 module and PyCatSniffer
-  
+  PLEASE REFER TO THESE LIBRARIES:
+    https://github.com/kroimon/Arduino-SerialCommand
+    https://github.com/sandeepmistry/arduino-LoRa
+    https://github.com/OperatorFoundation/Crypto
+ 
   Andres Sabas @ Electronic Cats
+  Eduardo Contreras @ Electronic Cats
   Kevin Leon @ Electronic Cats & PwnLabs
   Original Creation Date: Jal 23, 2021
   This code is beerware; if you see me (or any other Electronic Cats
@@ -54,10 +59,6 @@ bool rx_status = false;
 // NRST pin:  24
 // BUSY pin:  4
 SX1262 radio = new Module(17, 5, 24, 4);
-
-// or using RadioShield
-// https://github.com/jgromes/RadioShield
-//SX1262 radio = RadioShield.ModuleA;
 
 void setup() {
   Serial.begin(921600);
@@ -440,7 +441,6 @@ void set_tx_hex(){
   }
 }
 
-
 void set_tx_ascii(){
   isHopping = false;
   char *arg;  
@@ -701,6 +701,15 @@ void set_bw(){
           // Serial.println("Bandwidth set to 250 kHz");
           break;
 
+        case 9:
+          if (radio.setBandwidth(500.0) == RADIOLIB_ERR_INVALID_BANDWIDTH) {
+            Serial.println(F("Selected bandwidth is invalid for this module!"));
+            return;
+          }          
+          rx_status = false;
+          // Serial.println("Bandwidth set to 250 kHz");
+          break;
+
         default:
           Serial.println("Error setting the bandwidth value must be between 0-8");
           bwReference = bwRefResp; //if there's no valid data restore previous value
@@ -785,7 +794,7 @@ void set_pl(){
   arg = SCmd.next();  
   if (arg != NULL){
     preambleLength = atoi(arg);
-    if (radio.setPreambleLength(preambleLength) == RADIOLIB_ERR_INVALID_CODING_RATE) {
+    if (radio.setPreambleLength(preambleLength) == RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH) {
       Serial.println(F("Selected preamble length is invalid for this module!"));
       return;
     }
@@ -899,6 +908,9 @@ void get_bw(){
       break;
     case 8:
       Serial.println("250 kHz");
+      break;
+    case 9:
+      Serial.println("500 kHz");
       break;
     default:
       Serial.println("Error setting the bandwidth value must be between 0-8");
