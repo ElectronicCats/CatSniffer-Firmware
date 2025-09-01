@@ -950,11 +950,13 @@ void get_config(){
     case 8:
       Serial.println("250 kHz");
       break;
+    case 9:
+      Serial.println("500 kHz");
+      break;
   }
   Serial.println("Spreading Factor = " + String(spreadFactor));
   Serial.println("Coding Rate = 4/" + String(codingRate));
-  Serial.print("Sync Word = 0x");
-  Serial.println(syncWord, HEX);
+  Serial.println("Sync Word = 0x" + String(syncWord, HEX));
   Serial.println("Preamble Length = " + String(preambleLength));
   Serial.println("Output Power = " + String(outputPower));  
   Serial.println("Rx active = " + String(rx_status));
