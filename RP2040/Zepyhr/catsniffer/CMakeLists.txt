@@ -7,6 +7,7 @@ project(catsniffer LANGUAGES C)
 
 include(${ZEPHYR_BASE}/samples/subsys/usb/common/common.cmake)
 target_include_directories(app PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
 FILE(GLOB app_sources src/*.c)
 
 target_sources(app PRIVATE ${app_sources})
