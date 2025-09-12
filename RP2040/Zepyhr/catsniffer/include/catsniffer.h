@@ -53,7 +53,7 @@ typedef struct {
 } catsniffer_t;
 
 // Command recognition pattern
-extern const uint8_t commandID[5];
+extern const uint8_t commandID[4];
 
 // Global catsniffer instance
 extern catsniffer_t catsniffer;

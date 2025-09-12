@@ -46,7 +46,8 @@ const struct device *cdc0_dev;
 const struct device *cdc1_dev;
 
 // Command recognition pattern
-const uint8_t commandID[5] = {0xC3, 0xB1, 0xC3, 0xBF, 0x3C};
+//B1 C3 BF 3C 62
+const uint8_t commandID[4] = {0xB1, 0xC3, 0xBF, 0x3C};
 
 // Global catsniffer instance  
 catsniffer_t catsniffer = {0};
@@ -163,17 +164,9 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
             for (int i = 0; i < len; i++) {
                 uint8_t data = buf[i];
                 
-                // // RACE CONDITION FIX: Protect command processing
-                // if (command_processing) {
-                //     // If command processing busy, just forward data
-                //     safe_ring_buf_put(&rb_usb_to_cc1352, &data, 1);
-                //     uart_irq_tx_enable(uart_cc1352);
-                //     continue;
-                // }
-                
                 if (data == commandID[catsniffer.command_counter]) {
                     catsniffer.command_counter++;
-                    if (catsniffer.command_counter == 5) {
+                    if (catsniffer.command_counter == 4) {
                         catsniffer.command_recognized = true;
                         command_processing = true;  
                         continue;
@@ -188,9 +181,9 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
                     }
                     
                 if (catsniffer.command_data_len >= 3 &&
-                    catsniffer.command_data[catsniffer.command_data_len-3] == '>' &&
-                    catsniffer.command_data[catsniffer.command_data_len-2] == 0xFF &&  
-                    catsniffer.command_data[catsniffer.command_data_len-1] == 0xF1) {  
+                    catsniffer.command_data[catsniffer.command_data_len-3] == 0xC3 &&
+                    catsniffer.command_data[catsniffer.command_data_len-2] == 0xBF &&  
+                    catsniffer.command_data[catsniffer.command_data_len-1] == 0xC3) {  
                         
                     process_command(catsniffer.command_data, catsniffer.command_data_len);
                     catsniffer.command_recognized = false;
