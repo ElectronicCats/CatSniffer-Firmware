@@ -75,7 +75,7 @@ static const struct usb_bos_capability_lpm bos_cap_lpm = {
 USBD_DESC_BOS_DEFINE(sample_usbext, sizeof(bos_cap_lpm), &bos_cap_lpm);
 #endif
 
-static void sample_fix_code_triple(struct usbd_context *uds_ctx,
+static void usb_fix_code_triple(struct usbd_context *uds_ctx,
 				   const enum usbd_speed speed)
 {
 	/* Always use class code information from Interface Descriptors */
@@ -96,7 +96,7 @@ static void sample_fix_code_triple(struct usbd_context *uds_ctx,
 	}
 }
 
-struct usbd_context *sample_usbd_setup_device(usbd_msg_cb_t msg_cb)
+struct usbd_context *usbd_setup_device(usbd_msg_cb_t msg_cb)
 {
 	int err;
 
@@ -144,7 +144,7 @@ struct usbd_context *sample_usbd_setup_device(usbd_msg_cb_t msg_cb)
 			return NULL;
 		}
 
-		sample_fix_code_triple(&sample_usbd, USBD_SPEED_HS);
+		usb_fix_code_triple(&sample_usbd, USBD_SPEED_HS);
 	}
 
 	/* doc configuration register start */
@@ -164,7 +164,7 @@ struct usbd_context *sample_usbd_setup_device(usbd_msg_cb_t msg_cb)
 	}
 	/* doc functions register end */
 
-	sample_fix_code_triple(&sample_usbd, USBD_SPEED_FS);
+	usb_fix_code_triple(&sample_usbd, USBD_SPEED_FS);
 	usbd_self_powered(&sample_usbd, attributes & USB_SCD_SELF_POWERED);
 
 	if (msg_cb != NULL) {
@@ -191,11 +191,11 @@ struct usbd_context *sample_usbd_setup_device(usbd_msg_cb_t msg_cb)
 	return &sample_usbd;
 }
 
-struct usbd_context *sample_usbd_init_device(usbd_msg_cb_t msg_cb)
+struct usbd_context *usbd_init_device(usbd_msg_cb_t msg_cb)
 {
 	int err;
 
-	if (sample_usbd_setup_device(msg_cb) == NULL) {
+	if (usbd_setup_device(msg_cb) == NULL) {
 		return NULL;
 	}
 
