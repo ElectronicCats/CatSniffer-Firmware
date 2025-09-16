@@ -69,7 +69,7 @@ static const struct gpio_dt_spec ctf3 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf3), gpios);
 const struct gpio_dt_spec *LEDs[3] = {&led2, &led0, &led1};
 
 // USB context
-static struct usbd_context *sample_usbd;
+static struct usbd_context *catsniffer_usbd;
 K_SEM_DEFINE(dtr_sem, 0, 1);
 
 // Thread definitions
@@ -95,7 +95,7 @@ static inline uint32_t safe_ring_buf_get(struct ring_buf *rb, uint8_t *data, uin
 }
 
 // USB message callback
-static void sample_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *msg)
+static void catsniffer_usb_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *msg)
 {
     if (usbd_can_detect_vbus(ctx)) {
         if (msg->type == USBD_MSG_VBUS_READY) {
@@ -116,12 +116,12 @@ static void sample_msg_cb(struct usbd_context *const ctx, const struct usbd_msg 
 
 static int enable_usb_device_next(void)
 {
-    sample_usbd = sample_usbd_init_device(sample_msg_cb);
-    if (sample_usbd == NULL) {
+    catsniffer_usbd = usbd_init_device(catsniffer_usb_msg_cb);
+    if (catsniffer_usbd == NULL) {
         return -ENODEV;
     }
-    if (!usbd_can_detect_vbus(sample_usbd)) {
-        return usbd_enable(sample_usbd);
+    if (!usbd_can_detect_vbus(catsniffer_usbd)) {
+        return usbd_enable(catsniffer_usbd);
     }
     return 0;
 }
