@@ -19,7 +19,7 @@ export ZEPHYR_BASE=$HOME/zephyrproject/zephyr
 Once the enviroment variable is declared we can compile with west
 
 ```bash
-west build -p always -b rpi_pico -- -DZEPHYR_BASE=ZEPHYR_BASE -DDTV_OVERLAY_FILE=boards/rpio_pico.overlay
+west build -p always -b rpi_pico
 ```
 You can always add to your .bashrc or .zshrc
 
@@ -28,6 +28,8 @@ export ZEPHYR_TOOLCHAIN_VARIANT=zephyr
 export ZEPHYR_SDK_INSTALL_DIR=$HOME/zephyr-sdk-0.17.0
 export ZEPHYR_BASE=$HOME/zephyrproject/zephyr
 ```
+
+You may need to clean the build folder by erasing it
 
 ## Flash 
 
