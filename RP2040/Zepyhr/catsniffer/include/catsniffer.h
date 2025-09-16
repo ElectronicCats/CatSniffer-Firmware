@@ -9,6 +9,17 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
+#include <catsniffer_usbd.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/usb/usbd.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+#include <string.h>
+#include <stdlib.h>
 
 // Ring buffer and command buffer sizes
 #define RING_BUF_SIZE 1024
