@@ -16,6 +16,10 @@
         cjtag1 = &cjtag1;
         cjtag2 = &cjtag2;
         cjtag3 = &cjtag3;
+        sx1262-cs-pin = &sx1262_cs_pin;
+        sx1262-reset-pin = &sx1262_reset_pin;
+        sx1262-busy-pin = &sx1262_busy_pin;
+        sx1262-dio1-pin = &sx1262_dio1_pin;
     };
 
     leds {
@@ -77,6 +81,26 @@
             gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
             label = "CJTAG14";
         };
+
+        sx1262_cs_pin: sx1262-cs {
+            gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
+            label = "SX1262_CS";
+        };
+        
+        sx1262_reset_pin: sx1262-reset {
+            gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+            label = "SX1262_RESET";
+        };
+        
+        sx1262_busy_pin: sx1262-busy {
+            gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+            label = "SX1262_BUSY";
+        };
+        
+        sx1262_dio1_pin: sx1262-dio1 {
+            gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+            label = "SX1262_DIO1";
+        };
     };
 };
 
@@ -99,6 +123,23 @@
     pinctrl-names = "default";
 };
 
+// Enable and configure SPI for SX1262 
+&spi0 {
+    status = "okay";
+    pinctrl-0 = <&spi0_default>;
+    pinctrl-names = "default";
+    cs-gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
+    
+    sx1262: sx1262@0 {
+        compatible = "zephyr,spi-device";  // Use generic SPI device
+        reg = <0>;
+        spi-max-frequency = <8000000>;
+        reset-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+        busy-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+        dio1-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+    };
+};
+
 &pinctrl {
     uart0_default: uart0_default {
         group1 {
@@ -109,4 +150,32 @@
             input-enable;
         };
     };
+    
+    spi0_default: spi0_default {
+        group1 {
+            pinmux = <SPI0_SCK_P18>, <SPI0_TX_P19>;  // GPIO18=SCK, GPIO19=COPI(MOSI)
+        };
+        group2 {
+            pinmux = <SPI0_RX_P16>;  // GPIO16=CIPO(MISO)
+            input-enable;
+        };
+    };
 };
+
+
+/*
+ * ACTUAL PIN MAPPING FROM CATSNIFFER SCHEMATIC:
+ * 
+ * SX1262 Signal  | Pico GPIO | Pico Pin | Function
+ * ---------------|-----------|----------|----------
+ * CS             | GPIO17    | Pin 22   | SPI Chip Select (JTAG/TDO when JTAG not used)
+ * SCK            | GPIO18    | Pin 29   | SPI Clock
+ * MOSI (COPI)    | GPIO19    | Pin 30   | SPI Master Out
+ * MISO (CIPO)    | GPIO16    | Pin 27   | SPI Master In
+ * RESET          | GPIO24    | Pin 36   | Reset (active low) -> RESET_SX
+ * BUSY           | GPIO5     | Pin 6    | Busy indicator
+ * DIO1           | GPIO6     | Pin 7    | Interrupt output
+ * 
+ * Note: COPI = Controller Out Peripheral In (MOSI)
+ *       CIPO = Controller In Peripheral Out (MISO)
+ */
