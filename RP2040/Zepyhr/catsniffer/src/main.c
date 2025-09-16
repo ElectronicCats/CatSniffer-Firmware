@@ -4,7 +4,7 @@
  * MINIMAL race condition fixes applied to original working code
  */
 
-#include <sample_usbd.h>
+#include <catsniffer_usbd.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
@@ -66,7 +66,7 @@ static const struct gpio_dt_spec ctf2 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf2), gpios);
 static const struct gpio_dt_spec ctf3 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf3), gpios);
 
 // LED array for cycling animation 
-const struct gpio_dt_spec *LEDs[3] = {&led1, &led2, &led0};
+const struct gpio_dt_spec *LEDs[3] = {&led2, &led0, &led1};
 
 // USB context
 static struct usbd_context *sample_usbd;
@@ -134,7 +134,7 @@ static void cc1352_uart_interrupt_handler(const struct device *dev, void *user_d
             uint8_t buf[64];
             int len = uart_fifo_read(dev, buf, sizeof(buf));
             if (len > 0) {
-                // FIXED: Use safe ring buffer operation
+                
                 safe_ring_buf_put(&rb_cc1352_to_usb, buf, len);
                 uart_irq_tx_enable(cdc0_dev);
             }
@@ -142,7 +142,7 @@ static void cc1352_uart_interrupt_handler(const struct device *dev, void *user_d
 
         if (uart_irq_tx_ready(dev)) {
             uint8_t buf[64];
-            // FIXED: Use safe ring buffer operation
+            
             int len = safe_ring_buf_get(&rb_usb_to_cc1352, buf, sizeof(buf));
             if (len > 0) {
                 uart_fifo_fill(dev, buf, len);
@@ -218,14 +218,14 @@ static void cdc1_interrupt_handler(const struct device *dev, void *user_data)
             uint8_t buf[64];
             int len = uart_fifo_read(dev, buf, sizeof(buf));
             if (len > 0) {
-                // FIXED: Use safe ring buffer operation
+                
                 safe_ring_buf_put(&rb_usb_to_sx1262, buf, len);
             }
         }
         
         if (uart_irq_tx_ready(dev)) {
             uint8_t buf[64];
-            // FIXED: Use safe ring buffer operation
+            
             int len = safe_ring_buf_get(&rb_sx1262_to_usb, buf, sizeof(buf));
             if (len > 0) {
                 uart_fifo_fill(dev, buf, len);
@@ -419,20 +419,18 @@ void process_lora_command(char *cmd_line)
         snprintf(response, sizeof(response), "UNKNOWN_CMD\n");
     }
     
-    // FIXED: Use safe ring buffer operation
     safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
     if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
 }
 
-// LoRa thread function - RACE CONDITION FIXED
+// LoRa thread function 
 static void lora_thread_func(void *p1, void *p2, void *p3)
 {
     char command_buffer[128];
     size_t cmd_len = 0;
     
     while (1) {
-        uint8_t usb_buf[64];
-        // FIXED: Use safe ring buffer operation
+        uint8_t usb_buf[64];  
         int usb_len = safe_ring_buf_get(&rb_usb_to_sx1262, usb_buf, sizeof(usb_buf));
         
         if (usb_len > 0) {
@@ -558,6 +556,8 @@ int main(void)
     const char *startup_msg = "Catsniffer Firmware Ready - Send commands!\n";
     safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
     uart_irq_tx_enable(cdc0_dev);
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
+    uart_irq_tx_enable(cdc1_dev);
     
     // Start LoRa thread
     k_thread_create(&lora_thread, lora_thread_stack, LORA_THREAD_STACK_SIZE,
@@ -571,7 +571,7 @@ int main(void)
             catsniffer.previous_millis = current_time;
             //Check catsniffer mode
             if (catsniffer.mode) { 
-                static int led_index = 2;
+                static int led_index = 0;
                 // Cycle through LEDs
                 gpio_pin_toggle_dt(LEDs[led_index]);
                 led_index++;
