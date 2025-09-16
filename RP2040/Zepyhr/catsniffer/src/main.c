@@ -1,7 +1,7 @@
 /*
  * Complete Dual USB CDC-ACM Catsniffer Firmware
  * Eduardo Contreras @ Electronic Cats
- * MINIMAL race condition fixes applied to original working code
+ * 
  */
 
 #include <catsniffer_usbd.h>
@@ -70,7 +70,6 @@ const struct gpio_dt_spec *LEDs[3] = {&led2, &led0, &led1};
 
 // USB context
 static struct usbd_context *catsniffer_usbd;
-K_SEM_DEFINE(dtr_sem, 0, 1);
 
 // Thread definitions
 #define LORA_THREAD_STACK_SIZE 2048
@@ -102,14 +101,6 @@ static void catsniffer_usb_msg_cb(struct usbd_context *const ctx, const struct u
             usbd_enable(ctx);
         } else if (msg->type == USBD_MSG_VBUS_REMOVED) {
             usbd_disable(ctx);
-        }
-    }
-
-    if (msg->type == USBD_MSG_CDC_ACM_CONTROL_LINE_STATE) {
-        uint32_t dtr = 0U;
-        uart_line_ctrl_get(msg->dev, UART_LINE_CTRL_DTR, &dtr);
-        if (dtr) {
-            k_sem_give(&dtr_sem);
         }
     }
 }
@@ -252,12 +243,10 @@ void boot_mode_cc1352(void)
     reset_cc1352();
 }
 
-// RACE CONDITION FIX: Safe UART configuration
 void change_baud(unsigned long new_baud)
 {
     if (new_baud == catsniffer.baud) return;
     
-    // FIXED: Disable interrupts during UART reconfiguration
     uart_irq_tx_disable(uart_cc1352);
     uart_irq_rx_disable(uart_cc1352);
     
@@ -505,13 +494,12 @@ int main(void)
     gpio_pin_set_dt(&led2, 0);
 
     // Initialize USB
-#if defined(CONFIG_USB_DEVICE_STACK_NEXT)
     ret = enable_usb_device_next();
     if (ret < 0) {
         return ret;
     }
     gpio_pin_set_dt(&led0, 1);
-#endif
+
 
     // Initialize ALL ring buffers
     ring_buf_init(&rb_cc1352_to_usb, sizeof(ring_cc1352_to_usb), ring_cc1352_to_usb);
