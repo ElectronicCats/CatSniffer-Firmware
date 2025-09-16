@@ -3,19 +3,6 @@
  * Eduardo Contreras @ Electronic Cats
  * 
  */
-
-#include <catsniffer_usbd.h>
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/uart.h>
-#include <zephyr/sys/ring_buffer.h>
-#include <zephyr/usb/usbd.h>
-#include <zephyr/logging/log.h>
-#include <zephyr/sys/util.h>
-#include <string.h>
-#include <stdlib.h>
-
 #include "catsniffer.h"
 #include "sx1262_driver.h"
 
@@ -382,10 +369,6 @@ void process_command(char *cmd, size_t len)
     else {
         response = "UNKNOWN\n";
     }
-    
-    snprintf(debug_msg, sizeof(debug_msg), "Sending response: %s", response);
-    safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)debug_msg, strlen(debug_msg));
-    uart_irq_tx_enable(cdc0_dev);
     
     safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)response, strlen(response));
     uart_irq_tx_enable(cdc0_dev);
