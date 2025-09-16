@@ -39,18 +39,28 @@ const uint8_t commandID[4] = {0xB1, 0xC3, 0xBF, 0x3C};
 // Global catsniffer instance  
 catsniffer_t catsniffer = {0};
 
-// RACE CONDITION FIX: Add command processing protection
-static volatile bool command_processing = false;
-
-// GPIO pin specifications
+// GPIO for CC1352 control
 static const struct gpio_dt_spec pin_reset = GPIO_DT_SPEC_GET(DT_ALIAS(pin_reset), gpios);
 static const struct gpio_dt_spec pin_boot = GPIO_DT_SPEC_GET(DT_ALIAS(pin_boot), gpios);
+// GPIO for LED control
 static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 static const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 static const struct gpio_dt_spec led2 = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
+// GPIO for RF switch
+// static const struct gpio_dt_spec cjtag0 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag0), gpios);
+// static const struct gpio_dt_spec cjtag1 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag1), gpios);
+// static const struct gpio_dt_spec cjtag2 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag2), gpios);
+// static const struct gpio_dt_spec cjtag3 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag3), gpios);
+
+// GPIO for RF switch
 static const struct gpio_dt_spec ctf1 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf1), gpios);
 static const struct gpio_dt_spec ctf2 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf2), gpios);
 static const struct gpio_dt_spec ctf3 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf3), gpios);
+// GPIO for LoRa
+static const struct gpio_dt_spec sx1262_cs_pin = GPIO_DT_SPEC_GET(DT_ALIAS(sx1262_cs_pin), gpios);
+static const struct gpio_dt_spec sx1262_reset_pin = GPIO_DT_SPEC_GET(DT_ALIAS(sx1262_reset_pin), gpios);
+static const struct gpio_dt_spec sx1262_busy_pin = GPIO_DT_SPEC_GET(DT_ALIAS(sx1262_busy_pin), gpios);
+static const struct gpio_dt_spec sx1262_dio1_pin = GPIO_DT_SPEC_GET(DT_ALIAS(sx1262_dio1_pin), gpios);
 
 // LED array for cycling animation 
 const struct gpio_dt_spec *LEDs[3] = {&led2, &led0, &led1};
@@ -62,6 +72,15 @@ static struct usbd_context *catsniffer_usbd;
 #define LORA_THREAD_STACK_SIZE 2048
 K_THREAD_STACK_DEFINE(lora_thread_stack, LORA_THREAD_STACK_SIZE);
 static struct k_thread lora_thread;
+
+// SX1262 instance and status
+static sx1262_t sx1262_radio = {0};
+static bool sx1262_initialized = false;
+
+// SX1262 receive buffer
+static uint8_t rx_buffer[255];
+static uint8_t rx_length = 0;
+
 
 // RACE CONDITION FIX: Safe ring buffer operations
 static inline uint32_t safe_ring_buf_put(struct ring_buf *rb, const uint8_t *data, uint32_t size)
@@ -146,7 +165,6 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
                     catsniffer.command_counter++;
                     if (catsniffer.command_counter == 4) {
                         catsniffer.command_recognized = true;
-                        command_processing = true;  
                         continue;
                     }
                 } else if (!catsniffer.command_recognized) {
@@ -167,7 +185,6 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
                     catsniffer.command_recognized = false;
                     catsniffer.command_data_len = 0;
                     catsniffer.command_counter = 0;
-                    command_processing = false;  
                     }
                 } else {
                     safe_ring_buf_put(&rb_usb_to_cc1352, &data, 1);
@@ -294,6 +311,245 @@ void change_mode(unsigned long new_mode)
     }
 }
 
+// SX1262 TX done callback
+void sx1262_tx_done_callback(void)
+{
+    const char *msg = "TX_DONE\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)msg, strlen(msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+}
+
+// SX1262 RX done callback
+void sx1262_rx_done_callback(uint8_t *data, uint8_t len, int16_t rssi, int8_t snr)
+{
+    char response[512];
+    char hex_data[256] = {0};
+    
+    // Convert received data to hex string
+    for (uint8_t i = 0; i < len && i < 127; i++) {
+        snprintf(&hex_data[i*2], 3, "%02X", data[i]);
+    }
+    
+    snprintf(response, sizeof(response), 
+             "RX_DONE: %u bytes, RSSI=%d dBm, SNR=%d dB, Data=%s\n", 
+             len, rssi, snr, hex_data);
+    
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+}
+
+// SX1262 RX error callback
+void sx1262_rx_error_callback(void)
+{
+    const char *msg = "RX_ERROR\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)msg, strlen(msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+}
+
+// SX1262 interrupt work handler
+static void sx1262_irq_work_handler(struct k_work *work)
+{
+    uint16_t irq_status;
+    int ret = sx1262_get_irq_status(&sx1262_radio, &irq_status);
+    
+    if (ret < 0) {
+        return;
+    }
+    
+    // Clear all interrupts
+    sx1262_clear_irq_status(&sx1262_radio, irq_status);
+    
+    // Handle TX done
+    if (irq_status & SX1262_IRQ_TX_DONE) {
+        if (sx1262_radio.tx_done_callback) {
+            sx1262_radio.tx_done_callback();
+        }
+    }
+    
+    // Handle RX done
+    if (irq_status & SX1262_IRQ_RX_DONE) {
+        // Get packet status for RSSI and SNR
+        uint8_t packet_status[3];
+        sx1262_read_command(&sx1262_radio, SX1262_CMD_GET_PACKET_STATUS, packet_status, 3);
+        
+        int16_t rssi = -packet_status[0] / 2;
+        int8_t snr = packet_status[1] / 4;
+        
+        // Get received data
+        uint8_t rx_status[2];
+        sx1262_read_command(&sx1262_radio, SX1262_CMD_GET_RX_BUFFER_STATUS, rx_status, 2);
+        
+        uint8_t payload_length = rx_status[0];
+        uint8_t rx_start_buffer = rx_status[1];
+        
+        if (payload_length > 0 && payload_length <= sizeof(rx_buffer)) {
+            sx1262_read_buffer(&sx1262_radio, rx_start_buffer, rx_buffer, payload_length);
+            rx_length = payload_length;
+            
+            if (sx1262_radio.rx_done_callback) {
+                sx1262_radio.rx_done_callback(rx_buffer, payload_length, rssi, snr);
+            }
+        }
+    }
+    
+    // Handle RX timeout
+    if (irq_status & SX1262_IRQ_TIMEOUT) {
+        const char *msg = "RX_TIMEOUT\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)msg, strlen(msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    }
+    
+    // Handle CRC error
+    if (irq_status & SX1262_IRQ_CRC_ERR) {
+        if (sx1262_radio.rx_error_callback) {
+            sx1262_radio.rx_error_callback();
+        }
+    }
+}
+
+// SX1262 DIO1 interrupt handler
+static void sx1262_dio1_interrupt(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+    // Schedule work to handle interrupt in thread context
+    k_work_submit(&sx1262_radio.irq_work);
+}
+
+int setup_sx1262_interrupts(void)
+{    
+    // Initialize interrupt work
+    k_work_init(&sx1262_radio.irq_work, sx1262_irq_work_handler);
+    
+    // Setup callbacks
+    sx1262_radio.tx_done_callback = sx1262_tx_done_callback;
+    sx1262_radio.rx_done_callback = sx1262_rx_done_callback;
+    sx1262_radio.rx_error_callback = sx1262_rx_error_callback;
+    
+    const char *status_msg = "SX1262: Setting up interrupts...\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    // Configure DIO1 interrupt (use the static GPIO pins directly)
+    gpio_init_callback(&sx1262_radio.dio1_callback, sx1262_dio1_interrupt, 
+                       BIT(sx1262_dio1_pin.pin));
+    
+    int ret = gpio_add_callback(sx1262_dio1_pin.port, &sx1262_radio.dio1_callback);
+    if (ret < 0) {
+        status_msg = "ERROR: Failed to add GPIO callback (%d)\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return ret;
+    }
+    
+    ret = gpio_pin_interrupt_configure_dt(&sx1262_dio1_pin, GPIO_INT_EDGE_RISING);
+    if (ret < 0) {
+        status_msg = "ERROR: Failed to configure GPIO interrupt (%d)\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return ret;
+    }
+    
+    status_msg = "SX1262: Interrupts configured successfully!\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    return 0;
+}
+
+int initialize_sx1262(void)
+{
+    const char *status_msg = "Initialize SX1276!\n";
+    safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    uart_irq_tx_enable(cdc1_dev);
+
+    if (sx1262_initialized) {
+        status_msg = "SX1262: Already initialized\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return 0;
+    }
+
+    
+    // Get SPI device
+    sx1262_radio.spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi0));
+    if (!device_is_ready(sx1262_radio.spi_dev)) {
+        status_msg = "ERROR: SPI device not ready\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return -ENODEV;
+    }
+    
+    status_msg = "SX1262: SPI device ready\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    // Configure SPI
+    sx1262_radio.spi_cfg.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB;
+    sx1262_radio.spi_cfg.frequency = 8000000; // 8MHz
+    sx1262_radio.spi_cfg.slave = 0;
+    
+    // Check GPIO devices (don't assign to const struct members)
+    if (!device_is_ready(sx1262_cs_pin.port) || 
+        !device_is_ready(sx1262_reset_pin.port) || 
+        !device_is_ready(sx1262_busy_pin.port) ||
+        !device_is_ready(sx1262_dio1_pin.port)) {
+        status_msg = "ERROR: SX1262 GPIO devices not ready\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return -ENODEV;
+    }
+    
+    status_msg = "SX1262: GPIO devices ready\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    status_msg = "SX1262: GPIO pins configured\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    // Set default LoRa parameters
+    sx1262_radio.frequency = 868000000; // 868 MHz
+    sx1262_radio.tx_power = 14;         // 14 dBm
+    sx1262_radio.spreading_factor = 7;   // SF7
+    sx1262_radio.bandwidth = 0x04;       // 125 kHz
+    sx1262_radio.coding_rate = 0x01;     // 4/5
+    sx1262_radio.crc_enabled = true;
+    
+    // Reset the radio (use the static GPIO pins directly)
+    status_msg = "SX1262: Resetting radio...\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    gpio_pin_set_dt(&sx1262_reset_pin, 0);
+    k_msleep(1);
+    gpio_pin_set_dt(&sx1262_reset_pin, 1);
+    k_msleep(100);
+    
+    // Wait for BUSY to go low
+    int timeout = 1000;
+    while (gpio_pin_get_dt(&sx1262_busy_pin) && timeout > 0) {
+        k_usleep(100);
+        timeout--;
+    }
+    
+    if (timeout <= 0) {
+        status_msg = "ERROR: SX1262 BUSY timeout\n";
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return -ETIMEDOUT;
+    }
+    
+    status_msg = "SX1262: Reset complete\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    sx1262_initialized = true;
+    status_msg = "SX1262: Initialization completed successfully!\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    
+    return 0;
+}
+
 void process_command(char *cmd, size_t len)
 {
     char debug_msg[128];
@@ -376,21 +632,48 @@ void process_command(char *cmd, size_t len)
 
 void process_lora_command(char *cmd_line)
 {
-    char response[128];
+    char response[256];
     
-    if (strncmp(cmd_line, "TX ", 3) == 0) {
-        snprintf(response, sizeof(response), "TX_OK\n");
-    }
-    else if (strncmp(cmd_line, "RX", 2) == 0) {
-        snprintf(response, sizeof(response), "RX_OK\n");
-    }
-    else if (strncmp(cmd_line, "STATUS", 6) == 0) {
-        snprintf(response, sizeof(response), "STATUS_OK\n");
-    }
-    else {
-        snprintf(response, sizeof(response), "UNKNOWN_CMD\n");
+    // TEST command - simple SX1262 test
+    if (strncmp(cmd_line, "TEST", 4) == 0) {
+        snprintf(response, sizeof(response), "TEST: Starting SX1262 test...\n");
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        
+        // Force re-initialization for testing
+        sx1262_initialized = false;
+        int ret = initialize_sx1262();
+        
+        if (ret == 0) {
+            ret = setup_sx1262_interrupts();
+            if (ret == 0) {
+                snprintf(response, sizeof(response), "TEST: SX1262 fully ready!\n");
+            } else {
+                snprintf(response, sizeof(response), "TEST: Init OK, but interrupt setup failed (%d)\n", ret);
+            }
+        } else {
+            snprintf(response, sizeof(response), "TEST: Initialization failed (%d)\n", ret);
+        }
+        
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return;
     }
     
+    // STATUS command
+    if (strncmp(cmd_line, "STATUS", 6) == 0) {
+        if (sx1262_initialized) {
+            snprintf(response, sizeof(response), "STATUS: SX1262 initialized and ready\n");
+        } else {
+            snprintf(response, sizeof(response), "STATUS: SX1262 not initialized\n");
+        }
+        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
+        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        return;
+    }
+    
+    // Default response
+    snprintf(response, sizeof(response), "Available commands: TEST, STATUS\n");
     safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
     if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
 }
@@ -446,7 +729,12 @@ int main(void)
     INIT_GPIO(cjtag1, GPIO_INPUT);
     INIT_GPIO(cjtag2, GPIO_INPUT);
     INIT_GPIO(cjtag3, GPIO_INPUT);
-    
+
+    INIT_GPIO(sx1262_cs_pin, GPIO_OUTPUT_INACTIVE);
+    INIT_GPIO(sx1262_reset_pin, GPIO_OUTPUT_ACTIVE); 
+    INIT_GPIO(sx1262_busy_pin, GPIO_INPUT);
+    INIT_GPIO(sx1262_dio1_pin, GPIO_INPUT);
+
     gpio_pin_set_dt(&pin_reset, 1);
     
     // Check device readiness
@@ -482,7 +770,6 @@ int main(void)
         return ret;
     }
     gpio_pin_set_dt(&led0, 1);
-
 
     // Initialize ALL ring buffers
     ring_buf_init(&rb_cc1352_to_usb, sizeof(ring_cc1352_to_usb), ring_cc1352_to_usb);
@@ -529,6 +816,20 @@ int main(void)
     uart_irq_tx_enable(cdc0_dev);
     safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
     uart_irq_tx_enable(cdc1_dev);
+
+        
+    ret = initialize_sx1262();
+    if (ret < 0) {
+        LOG_ERR("SX1262 initialization failed: %d", ret);
+        // Continue anyway, LoRa commands will show error when used
+    } else {
+        ret = setup_sx1262_interrupts();
+        if (ret < 0) {
+            LOG_ERR("SX1262 interrupt setup failed: %d", ret);
+        } else {
+            LOG_INF("SX1262 initialized successfully");
+        }
+    }
     
     // Start LoRa thread
     k_thread_create(&lora_thread, lora_thread_stack, LORA_THREAD_STACK_SIZE,
