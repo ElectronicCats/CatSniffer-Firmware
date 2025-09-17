@@ -16,10 +16,7 @@
         cjtag1 = &cjtag1;
         cjtag2 = &cjtag2;
         cjtag3 = &cjtag3;
-        sx1262-cs-pin = &sx1262_cs_pin;
-        sx1262-reset-pin = &sx1262_reset_pin;
-        sx1262-busy-pin = &sx1262_busy_pin;
-        sx1262-dio1-pin = &sx1262_dio1_pin;
+        lora0 = &sx1262;
     };
 
     leds {
@@ -131,9 +128,10 @@
     cs-gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
     
     sx1262: sx1262@0 {
-        compatible = "zephyr,spi-device";  // Use generic SPI device
+        compatible = "semtech,sx1262";
         reg = <0>;
-        spi-max-frequency = <8000000>;
+        spi-max-frequency = <1000000>;
+        
         reset-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
         busy-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
         dio1-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
