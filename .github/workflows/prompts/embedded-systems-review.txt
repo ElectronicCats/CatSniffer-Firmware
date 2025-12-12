@@ -143,10 +143,10 @@ Submission:
 
 Blocking behavior:
 - Count critical (🚨) and security (🔒) issues found
-- If BLOCKING_REVIEW is true and any 🚨 or 🔒 issues were posted: 
+- If BLOCKING_REVIEW is true and any 🚨 or 🔒 issues were posted:
   * Set CRITICAL_ISSUES_FOUND=true using $GITHUB_ENV for GitHub Actions variable propagation
   * Command: echo "CRITICAL_ISSUES_FOUND=true" >> $GITHUB_ENV
-- Otherwise: 
+- Otherwise:
   * Set CRITICAL_ISSUES_FOUND=false using $GITHUB_ENV
   * Command: echo "CRITICAL_ISSUES_FOUND=false" >> $GITHUB_ENV
 - Always set CRITICAL_ISSUES_FOUND at the end of review

@@ -9,7 +9,7 @@
  Target Device: cc13xx_cc26xx
 
  ******************************************************************************
- 
+
  Copyright (c) 2013-2023, Texas Instruments Incorporated
  All rights reserved.
 
@@ -41,16 +41,15 @@
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
  ******************************************************************************
- 
- 
+
+
  *****************************************************************************/
 
 #ifndef AIRTAGSPOOFER_H
 #define AIRTAGSPOOFER_H
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 /*********************************************************************

@@ -38,12 +38,12 @@ def main():
                     hex_files.append(hex_file)
                     shutil.copy(os.path.join(directory_path, 'Release', hex_file), "tmp")
 
-    
+
 
     # Pack the release data into the package
     packet_json = {
         "board_v3": hex_files
-    
+
     }
     write_json_file(RELEASE_FILENAME, packet_json)
     print("Release data packed into %s" % RELEASE_FILENAME)
