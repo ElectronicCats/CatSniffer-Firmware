@@ -249,7 +249,6 @@ jobs:
           REVIEW_MAX_COMMENTS: ${{ vars.REVIEW_MAX_COMMENTS || '20' }}
           MODEL: ${{ steps.select-model.outputs.MODEL }}
         run: |
-          # Read prompt template and replace placeholders with actual values
           PROMPT_FILE=".github/workflows/prompts/embedded-systems-review.txt"
 
           if [ ! -f "$PROMPT_FILE" ]; then
@@ -257,8 +256,6 @@ jobs:
             exit 1
           fi
 
-          # Replace placeholders with actual values (escaping special characters for sed)
-          # Use different delimiter (|) to avoid conflicts with URLs and paths
           sed -e "s|{{REPO}}|$REPO|g" \
               -e "s|{{PR_NUMBER}}|$PR_NUMBER|g" \
               -e "s|{{PR_HEAD_SHA}}|$PR_HEAD_SHA|g" \
@@ -269,23 +266,16 @@ jobs:
               -e "s|{{MODEL}}|$MODEL|g" \
               "$PROMPT_FILE" > /tmp/review-prompt.txt
 
-	  echo "" >> /tmp/review-prompt.txt
-	  echo "==========================" >> /tmp/review-prompt.txt
-	  echo "PULL REQUEST DIFF" >> /tmp/review-prompt.txt
-	  echo "==========================" >> /tmp/review-prompt.txt
-	  echo "" >> /tmp/review-prompt.txt
+          echo "" >> /tmp/review-prompt.txt
+          echo "==========================" >> /tmp/review-prompt.txt
+          echo "PULL REQUEST DIFF" >> /tmp/review-prompt.txt
+          echo "==========================" >> /tmp/review-prompt.txt
+          echo "" >> /tmp/review-prompt.txt
 
-	  cat "$DIFF_FILE" >> /tmp/review-prompt.txt
+          cat "$DIFF_FILE" >> /tmp/review-prompt.txt
 
-	  echo "Final prompt size: $(wc -c < /tmp/review-prompt.txt) characters"
+          echo "Final prompt size: $(wc -c < /tmp/review-prompt.txt) characters"
 
-          # Validate that all placeholders were replaced
-          if grep -q "{{" /tmp/review-prompt.txt; then
-            echo "::warning::Some placeholders may not have been replaced:"
-            grep -n "{{" /tmp/review-prompt.txt || true
-          fi
-
-          # Validate that all placeholders were replaced
           if grep -q "{{" /tmp/review-prompt.txt; then
             echo "::warning::Some placeholders may not have been replaced:"
             grep -n "{{" /tmp/review-prompt.txt || true
