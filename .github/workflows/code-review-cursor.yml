@@ -125,6 +125,25 @@ jobs:
           git config user.name "Cursor AI Reviewer"
           git config user.email "cursor-reviewer@noreply.github.com"
 
+      - name: Generate PR diff
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          git diff origin/${{ github.event.pull_request.base.ref }}...HEAD > /tmp/pr.diff
+          echo "Diff size: $(wc -c < /tmp/pr.diff) bytes"
+
+      - name: Trim diff to context window
+        run: |
+          MAX_BYTES=200000
+
+          if [ $(wc -c < /tmp/pr.diff) -gt $MAX_BYTES ]; then
+            head -c $MAX_BYTES /tmp/pr.diff > /tmp/pr.diff.trimmed
+            echo "Using trimmed diff"
+            echo "DIFF_FILE=/tmp/pr.diff.trimmed" >> $GITHUB_ENV
+          else
+            echo "Using full diff"
+            echo "DIFF_FILE=/tmp/pr.diff" >> $GITHUB_ENV
+          fi
+
       - name: Select optimal AI model based on PR size
         id: select-model
         env:
@@ -250,8 +269,15 @@ jobs:
               -e "s|{{MODEL}}|$MODEL|g" \
               "$PROMPT_FILE" > /tmp/review-prompt.txt
 
-          echo "✅ Prompt prepared and saved to /tmp/review-prompt.txt"
-          echo "Prompt length: $(wc -c < /tmp/review-prompt.txt) characters"
+	  echo "" >> /tmp/review-prompt.txt
+	  echo "==========================" >> /tmp/review-prompt.txt
+	  echo "PULL REQUEST DIFF" >> /tmp/review-prompt.txt
+	  echo "==========================" >> /tmp/review-prompt.txt
+	  echo "" >> /tmp/review-prompt.txt
+
+	  cat "$DIFF_FILE" >> /tmp/review-prompt.txt
+
+	  echo "Final prompt size: $(wc -c < /tmp/review-prompt.txt) characters"
 
           # Validate that all placeholders were replaced
           if grep -q "{{" /tmp/review-prompt.txt; then
