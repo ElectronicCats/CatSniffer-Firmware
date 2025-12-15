@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Optimize: only fetch base and head commits for PR diff comparison
-          fetch-depth: ${{ github.event_name == 'pull_request' && '2' || '0' }}
+          fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
