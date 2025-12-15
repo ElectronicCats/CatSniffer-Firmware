@@ -317,7 +317,7 @@ jobs:
 
           # Execute cursor-agent with error handling and timeout protection
           # Read prompt from prepared file
-          cursor-agent --force --model "$MODEL" --output-format=text --print "$(cat /tmp/review-prompt.txt)" || {
+          cat /tmp/review-prompt.txt | cursor-agent --force --model "$MODEL" --output-format=text || {
             EXIT_CODE=$?
             echo "::error::cursor-agent failed with exit code $EXIT_CODE"
             echo "Model used: $MODEL"
