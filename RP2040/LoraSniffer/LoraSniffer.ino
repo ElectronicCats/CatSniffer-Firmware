@@ -23,6 +23,8 @@
 #define LED2 (26)
 #define LED3 (28)
 
+#define FIRMWARE_NAME "LoRaSniffer"
+
 uint8_t LEDs[3]={LED1,LED2,LED3};
 
 float hopChannels[] = {903.0, 905.0, 907.0, 909.0, 911.0};
@@ -36,7 +38,7 @@ unsigned long hopInterval = 0.16; // Seconds
 
 SerialCommand SCmd;
 
-float fwVersion= 0.2;
+float fwVersion= 1.0;
 float region = 915;
 float frequency = 915;
 int spreadFactor = 7;
@@ -88,6 +90,9 @@ void setup() {
   SCmd.addCommand("get_op",get_op);
   SCmd.addCommand("get_sw",get_sw);
   SCmd.addCommand("get_pl",get_pl);
+
+  SCmd.addCommand("version", showFirmwareVersion);
+  SCmd.addCommand("firmware", showFirmwareName);
   
   SCmd.setDefaultHandler(unrecognized);  // Handler for command that isn't matched  (says "What?") 
 
@@ -152,6 +157,15 @@ void setFlag(void) {
   // we got a packet, set the flag
   receivedFlag = true;
 }
+
+
+void showFirmwareVersion(){
+  Serial.println(String(fwVersion, 1));
+}
+void showFirmwareName(){
+  Serial.println(String(FIRMWARE_NAME));
+}
+
 
 int16_t floatToTwoBytesSigned(float value, float minValue, float maxValue) {
     if (value < minValue) value = minValue;
