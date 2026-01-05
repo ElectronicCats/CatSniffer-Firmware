@@ -14,6 +14,9 @@
 
 #include "SerialPassthroughwithboot.h"
 
+#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_NAME "SerialPassthroughwithboot"
+
 catsniffer_t catsniffer;
 
 uint8_t LEDs[3]={LED1,LED2,LED3};
@@ -245,6 +248,13 @@ void processCommand(String *cmd){
     digitalWrite(LED2, 0);
     digitalWrite(LED3, 0);
   }
+  if("version" == *cmd){
+    Serial.println(String(FIRMWARE_VERSION));
+  }
+  if("firmware" == *cmd){
+    Serial.println(String(FIRMWARE_NAME));
+  }
+  
   //change RF band to work with
   //Ping?
   //Return catsniffer version

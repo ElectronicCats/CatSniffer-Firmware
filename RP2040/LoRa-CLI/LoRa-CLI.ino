@@ -18,9 +18,11 @@
 #define CTF2 9
 #define CTF3 10
 
+#define FIRMWARE_NAME "LoRaCLI"
+
 SerialCommand SCmd;
 
-float fwVersion = 0.1;
+float fwVersion = 1.0;
 float region = 915;
 float frequency = 915;
 int spreadFactor = 7;
@@ -82,6 +84,9 @@ void setup() {
   SCmd.addCommand("get_sw", get_sw);
   SCmd.addCommand("get_pl", get_pl);
 
+  SCmd.addCommand("version", showFirmwareVersion);
+  SCmd.addCommand("firmware", showFirmwareName);
+
   SCmd.setDefaultHandler(unrecognized);  // Handler for command that isn't matched  (says "What?")
 
   pinMode(CTF1, OUTPUT);
@@ -141,6 +146,13 @@ void setFlag(void) {
 
   // we got a packet, set the flag
   receivedFlag = true;
+}
+
+void showFirmwareVersion(){
+  Serial.println(String(fwVersion, 1));
+}
+void showFirmwareName(){
+  Serial.println(String(FIRMWARE_NAME));
 }
 
 void loop() {
