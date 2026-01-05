@@ -169,14 +169,9 @@ void loop() {
     receivedFlag = false;
 
     // you can read received data as an Arduino String
-    String str;
-    int state = radio.readData(str);
-
-    // you can also read received data as byte array
-    /*
-      byte byteArr[8];
-      int state = radio.readData(byteArr, 8);
-    */
+    int recvLen = radio.getPacketLength();
+    byte byteArr[recvLen];
+    int state = radio.readData(byteArr, recvLen);
 
     if (state == RADIOLIB_ERR_NONE) {
       // packet was successfully received
@@ -184,7 +179,7 @@ void loop() {
 
       // print data of the packet
       Serial.print(F("[SX1262] Data:\t\t"));
-      Serial.println(str);
+      Serial.write(byteArr, recvLen);
 
       // print RSSI (Received Signal Strength Indicator)
       Serial.print(F("[SX1262] RSSI:\t\t"));
@@ -688,34 +683,28 @@ byte nibble(char c)
   return 0;  // Not a valid hexadecimal character
 }
 
-void set_sw() {
-  char *arg;
+void set_sw(){
+  char *arg;  
   byte data;
-  int i;
 
-  arg = SCmd.next();    // Get the next argument from the SerialCommand object buffer
-  if (arg != NULL) {
-
-    if ((arg[0] > 64 && arg[0] < 71 || arg[0] > 47 && arg[0] < 58) && (arg[1] > 64 && arg[1] < 71 || arg[1] > 47 && arg[1] < 58) && arg[2] == 0) {
-
-      data = 0;
-      data = nibble(*(arg)) << 4;
-      data = data | nibble(*(arg + 1));
-      if (radio.setSyncWord(data) != RADIOLIB_ERR_NONE) {
-        Serial.println(F("Unable to set sync word!"));
-        return;
+  arg = SCmd.next();
+  if(arg != NULL){
+      char *endptr;
+      long val = strtol(arg, &endptr, 0);
+      
+      if (*endptr == '\0' && val >= 0 && val <= 0xFF) {
+          data = (byte)val;
+          if (radio.setSyncWord(data) != RADIOLIB_ERR_NONE) {
+              Serial.println(F("Unable to set sync word!"));
+              return;
+          }
+          syncWord = data;
+      } else {
+          Serial.println(F("Invalid sync word. Use a hexadecimal byte (e.g. 2B or 0x2B)"));
+          return;
       }
-      Serial.print("Sync word set to 0x");
-      Serial.println(data, HEX);
-      syncWord = data;
-    }
-    else {
-      Serial.println("Use yy value. The value yy represents any pair of hexadecimal digits. ");
-      return;
-    }
-  }
-  else {
-    Serial.println("No argument");
+  } else {
+    Serial.println(F("No argument")); 
   }
 }
 

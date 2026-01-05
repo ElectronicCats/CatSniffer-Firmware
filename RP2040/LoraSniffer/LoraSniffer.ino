@@ -1,7 +1,12 @@
 /*
   LoRaSniffer - Use LoRa for communication with the SX1262 module and PyCatSniffer
-  
+  PLEASE REFER TO THESE LIBRARIES:
+    https://github.com/kroimon/Arduino-SerialCommand
+    https://github.com/sandeepmistry/arduino-LoRa
+    https://github.com/OperatorFoundation/Crypto
+ 
   Andres Sabas @ Electronic Cats
+  Eduardo Contreras @ Electronic Cats
   Kevin Leon @ Electronic Cats & PwnLabs
   Original Creation Date: Jal 23, 2021
   This code is beerware; if you see me (or any other Electronic Cats
@@ -56,10 +61,6 @@ bool rx_status = false;
 // NRST pin:  24
 // BUSY pin:  4
 SX1262 radio = new Module(17, 5, 24, 4);
-
-// or using RadioShield
-// https://github.com/jgromes/RadioShield
-//SX1262 radio = RadioShield.ModuleA;
 
 void setup() {
   Serial.begin(921600);
@@ -207,19 +208,16 @@ union {
 } packet;
 
 
-void sendPacket(const String& payload) {
+void sendPacket(uint8_t* payload, uint16_t payloadLength) {
   // SOF: Start of Frame
   Serial.write("@S");
 
   // Packet length
-  uint16_t packetLength = payload.length();
-  Serial.write(highByte(packetLength));
-  Serial.write(lowByte(packetLength));
+  Serial.write(highByte(payloadLength));
+  Serial.write(lowByte(payloadLength));
 
   // Payload
-  for (size_t i = 0; i < payload.length(); i++) {
-    Serial.write(payload[i]);
-  }
+  Serial.write(payload, payloadLength);
 
   // RSSI
   float rssi = radio.getRSSI();
@@ -256,17 +254,19 @@ void loop() {
     receivedFlag = false;
 
     // you can read received data as an Arduino String
-    String str;
-    int state = radio.readData(str);
-
+    // String str;
+    // int state = radio.readData(str);
+    int recvLen = radio.getPacketLength();
+    byte byteArr[recvLen];
+    int state = radio.readData(byteArr, recvLen);
     // you can also read received data as byte array
     /*
       byte byteArr[8];
-      int state = radio.readData(byteArr, 8);
+      
     */
 
     if (state == RADIOLIB_ERR_NONE) {
-      sendPacket(str);
+      sendPacket(byteArr, recvLen);
       digitalWrite(LED1, 1);
       digitalWrite(LED2, 1);
       digitalWrite(LED3, 1);
@@ -454,7 +454,6 @@ void set_tx_hex(){
     Serial.println("No argument"); 
   }
 }
-
 
 void set_tx_ascii(){
   isHopping = false;
@@ -716,6 +715,15 @@ void set_bw(){
           // Serial.println("Bandwidth set to 250 kHz");
           break;
 
+        case 9:
+          if (radio.setBandwidth(500.0) == RADIOLIB_ERR_INVALID_BANDWIDTH) {
+            Serial.println(F("Selected bandwidth is invalid for this module!"));
+            return;
+          }          
+          rx_status = false;
+          // Serial.println("Bandwidth set to 250 kHz");
+          break;
+
         default:
           Serial.println("Error setting the bandwidth value must be between 0-8");
           bwReference = bwRefResp; //if there's no valid data restore previous value
@@ -772,29 +780,25 @@ void set_sw(){
   isHopping = false;
   char *arg;  
   byte data;
-  int i;
 
-  arg = SCmd.next();    // Get the next argument from the SerialCommand object buffer
+  arg = SCmd.next();
   if(arg != NULL){
+      char *endptr;
+      long val = strtol(arg, &endptr, 0);
       
-      if((arg[0] > 64 && arg[0]< 71 || arg[0] > 47 && arg[0]< 58) && (arg[1] > 64 && arg[1]< 71 || arg[1] > 47 && arg[1]< 58) && arg[2] == 0){
-  
-          data = 0;
-          data = nibble(*(arg))<<4;
-          data = data|nibble(*(arg + 1));
+      if (*endptr == '\0' && val >= 0 && val <= 0xFF) {
+          data = (byte)val;
           if (radio.setSyncWord(data) != RADIOLIB_ERR_NONE) {
-            Serial.println(F("Unable to set sync word!"));
-            return;
+              Serial.println(F("Unable to set sync word!"));
+              return;
           }
-          // Serial.println("Sync word set to 0x" + String(data));
+          syncWord = data;
+      } else {
+          Serial.println(F("Invalid sync word. Use a hexadecimal byte (e.g. 2B or 0x2B)"));
+          return;
       }
-      else{
-        Serial.println("Use yy value. The value yy represents any pair of hexadecimal digits. ");
-        return;
-      }
-  } 
-  else {
-    Serial.println("No argument"); 
+  } else {
+    Serial.println(F("No argument")); 
   }
 }
 
@@ -804,21 +808,13 @@ void set_pl(){
   arg = SCmd.next();  
   if (arg != NULL){
     preambleLength = atoi(arg);
-    if(preambleLength > -1 || preambleLength < 65536){
-      Serial.println("Error setting the preamble length");
-      Serial.println("Value must be between 0 and 65535");
+    if (radio.setPreambleLength(preambleLength) == RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH) {
+      Serial.println(F("Selected preamble length is invalid for this module!"));
       return;
     }
-    else{
 
-        if (radio.setPreambleLength(preambleLength) == RADIOLIB_ERR_INVALID_CODING_RATE) {
-          Serial.println(F("Selected preamble length is invalid for this module!"));
-          return;
-        }
-
-      Serial.println("Preamble length set to " + String(preambleLength));
-      rx_status = false;
-    }
+    Serial.println("Preamble length set to " + String(preambleLength));
+    rx_status = false;
 
   } 
   else {
@@ -927,6 +923,9 @@ void get_bw(){
     case 8:
       Serial.println("250 kHz");
       break;
+    case 9:
+      Serial.println("500 kHz");
+      break;
     default:
       Serial.println("Error setting the bandwidth value must be between 0-8");
       break;
@@ -965,11 +964,13 @@ void get_config(){
     case 8:
       Serial.println("250 kHz");
       break;
+    case 9:
+      Serial.println("500 kHz");
+      break;
   }
   Serial.println("Spreading Factor = " + String(spreadFactor));
   Serial.println("Coding Rate = 4/" + String(codingRate));
-  Serial.print("Sync Word = 0x");
-  Serial.println(syncWord, HEX);
+  Serial.println("Sync Word = 0x" + String(syncWord, HEX));
   Serial.println("Preamble Length = " + String(preambleLength));
   Serial.println("Output Power = " + String(outputPower));  
   Serial.println("Rx active = " + String(rx_status));

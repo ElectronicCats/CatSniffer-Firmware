@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<ccsVariant value="50:Theia-based"/>
+	<ccsVersion value="70.2.0"/>
+	<deviceFamily value="TMS470"/>
+	<connection value="common/targetdb/connections/TIXDS110_Connection.xml"/>
+	<executableActions value=""/>
+	<createSlaveProjects value=""/>
+	<ignoreDefaultDeviceSettings value="true"/>
+	<ignoreDefaultCCSSettings value="true"/>
+	<templateProperties value="id=simple_central_LP_CC1352P7_1_tirtos7_ticlang.projectspec.simple_central_LP_CC1352P7_1_tirtos7_ticlang,buildProfile=release,isHybrid=true"/>
+	<activeTargetConfiguration value="targetConfigs/CC1352P7.ccxml"/>
+	<isTargetConfigurationManual value="false"/>
+	<origin value="/Users/cldrn/ti/simplelink_cc13xx_cc26xx_sdk_8_31_00_11/examples/rtos/LP_CC1352P7_1/ble5stack/simple_central/tirtos7/ticlang/simple_central_LP_CC1352P7_1_tirtos7_ticlang.projectspec"/>
+	<filesToOpen value=""/>
+</projectOptions>

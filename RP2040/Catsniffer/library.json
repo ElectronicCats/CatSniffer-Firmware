@@ -1,0 +1,7 @@
+{
+  "name": "Catsniffer",
+  "keywords": "serial, communication, protocol, catsniffer, electroniccats",
+  "description": "A library for using catsniffer with serial passtrhough and commands",
+  "frameworks": "arduino",
+  "platforms": "atmelavr"
+}
