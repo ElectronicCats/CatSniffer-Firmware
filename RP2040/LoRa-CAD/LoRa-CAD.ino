@@ -24,7 +24,8 @@
 #define LED2 (26)
 #define LED3 (28)
 
-#define FIRMWARE_VERSION "0.2.0"
+#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_NAME "LoRaCAD"
 
 uint8_t LEDs[3] = { LED1, LED2, LED3 };
 
@@ -140,6 +141,8 @@ void setup() {
 
   SCmd.addCommand("get_state", cmdGetState);
   SCmd.addCommand("get_config", cmdGetConfiguration);
+  SCmd.addCommand("version", showFirmwareVersion);
+  SCmd.addCommand("firmware", showFirmwareName);
   SCmd.addCommand("help", help);
   
   SCmd.setDefaultHandler(unrecognized);
@@ -174,6 +177,13 @@ void setup() {
   // start scanning the channel
   Serial.println(F("[SX1262] Starting scan for LoRa preamble"));
   startRadioCAD();
+}
+
+void showFirmwareVersion(){
+  Serial.println(String(FIRMWARE_VERSION));
+}
+void showFirmwareName(){
+  Serial.println(String(FIRMWARE_NAME));
 }
 
 void cmdSetFrequency(){
