@@ -25,7 +25,8 @@
 #define FREQ_RANGE_END 960
 #define SAMPLE_RATE 2048
 
-#define FIRMWARE_VERSION "0.1.0"
+#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_NAME "LoRaFREQ"
 
 #define LED1 (27)
 #define LED2 (26)
@@ -66,6 +67,8 @@ void setup() {
   SCmd.addCommand("stop", cmdStop);
   SCmd.addCommand("get_state", cmdGetState);
   SCmd.addCommand("get_config", cmdGetConfiguration);
+  SCmd.addCommand("version", showFirmwareVersion);
+  SCmd.addCommand("firmware", showFirmwareName);
   SCmd.addCommand("help", help);
   SCmd.setDefaultHandler(unrecognized);
 
@@ -114,7 +117,7 @@ void setup() {
     while (true) { delay(10); }
   }
 
-  runningScan = true;
+  runningScan = false;
     // some modules have an external RF switch
   // controlled via two pins (RX enable, TX enable)
   // to enable automatic control of the switch,
@@ -128,14 +131,23 @@ void setup() {
   digitalWrite(LED3, 0);
 }
 
-void loop() {
+void showFirmwareVersion(){
+  Serial.println(String(FIRMWARE_VERSION));
+}
+void showFirmwareName(){
+  Serial.println(String(FIRMWARE_NAME));
+}
+
+void loop() {  
   SCmd.readSerial();     // We don't do much, just process serial commands
   // perform scan over the entire frequency range
   radioCtx.freq = radioCtx.freqStart;
   while((radioCtx.freq <= radioCtx.freqEnd) && runningScan) {
     if(!Serial){
+      runningScan = false;
       break;
     }
+    SCmd.readSerial();     // We don't do much, just process serial commands
     Serial.print("FREQ ");
     Serial.println(radioCtx.freq, 2);
 
