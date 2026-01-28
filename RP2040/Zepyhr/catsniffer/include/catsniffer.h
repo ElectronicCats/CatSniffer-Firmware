@@ -84,12 +84,14 @@ extern catsniffer_t catsniffer;
 // STATUS            - Get device status
 
 // Function prototypes
-static void  reset_cc1352(void);
-static void  boot_mode_cc1352(void);
-static void  change_baud(unsigned long new_baud);
-static void  change_band(unsigned long new_band);
-static void  change_mode(unsigned long new_mode);
-static void process_command(char *cmd, size_t len);
-static void  process_lora_command(char *cmd_line);
+// Function prototypes
+void  reset_cc1352(void);
+void  boot_mode_cc1352(void);
+void  change_baud(unsigned long new_baud);
+void  change_band(unsigned long new_band);
+void  change_mode(unsigned long new_mode);
+// process_command is in shell_commands.h now
+// void process_command(char *cmd, size_t len); 
+void  process_lora_command(char *cmd_line);
 
 #endif /* CATSNIFFER_H */
