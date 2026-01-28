@@ -2,6 +2,10 @@
 """
 Catsniffer Endpoint Detection
 Reads actual USB iInterface string descriptors using PyUSB.
+
+Remember to use the virutal enviroment
+source ~/zephyrproject/.venv/bin/activate && export ZEPHYR_BASE=$HOME/zephyrproject/zephyr
+
 """
 
 import subprocess
