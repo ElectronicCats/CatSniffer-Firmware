@@ -12,6 +12,7 @@ FILE(GLOB app_sources src/*.c)
 # Add local usb init
 target_sources_ifdef(CONFIG_USB_DEVICE_STACK_NEXT app PRIVATE
     src/USB/usbd_init.c
+    src/shell_commands.c
 )
 
 target_sources(app PRIVATE ${app_sources})

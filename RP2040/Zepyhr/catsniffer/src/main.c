@@ -4,6 +4,7 @@
  * 
  */
 #include "catsniffer.h"
+#include "shell_commands.h" // Logic separation
 
 LOG_MODULE_REGISTER(catsniffer_main, LOG_LEVEL_INF);
 
@@ -322,63 +323,22 @@ void change_mode(unsigned long new_mode)
     }
 }
 
-void process_command(char *cmd, size_t len)
-{
-    // Clean up command (remove possible trailing wrapper data if we kept it, but now we have clean strings)
-    // Actually, with the new parser, cmd is just the null-terminated string.
-    
-    const char *response;
-    
-    if (strcmp(cmd, "boot") == 0) {
-        change_mode(BOOT);
-        response = "BOOT\r\n";
-        gpio_pin_set_dt(&led0, 0);
-        gpio_pin_set_dt(&led1, 0);
-        gpio_pin_set_dt(&led2, catsniffer.mode);
-    }
-    else if (strcmp(cmd, "exit") == 0) {
-        change_mode(PASSTHROUGH);
-        response = "PASSTHROUGH\r\n";
-        gpio_pin_set_dt(&led0, 0);
-        gpio_pin_set_dt(&led1, 0);
-        gpio_pin_set_dt(&led2, 0);
-    }
-    else if (strcmp(cmd, "band1") == 0) {
-        change_band(GIG);
-        response = "2.4GHz Band\r\n";
-        gpio_pin_set_dt(&led0, 0);
-        gpio_pin_set_dt(&led1, 0);
-        gpio_pin_set_dt(&led2, 0);
-    }
-    else if (strcmp(cmd, "band2") == 0) {
-        change_band(SUBGIG_1);
-        response = "SUB-GHz Band\r\n";
-        gpio_pin_set_dt(&led0, 0);
-        gpio_pin_set_dt(&led1, 0);
-        gpio_pin_set_dt(&led2, 0);
-    }
-    else if (strcmp(cmd, "band3") == 0) {
-        change_band(SUBGIG_2);
-        response = "LoRa Band\r\n";
-        gpio_pin_set_dt(&led0, 0);
-        gpio_pin_set_dt(&led1, 0);
-        gpio_pin_set_dt(&led2, 0);
-    }
-    else if (strncmp(cmd, "TEST", 4) == 0) {
-        process_lora_command(cmd);
-        return; // process_lora_command handles output
-    }
-    else if (strncmp(cmd, "TX ", 3) == 0) {
-        process_lora_command(cmd);
-        return; // process_lora_command handles output
-    }
-    else {
-        response = "UNKNOWN\r\n";
-    }
-    
-    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+// --- Shell Helpers (Exposed to shell_commands.c) ---
+
+void shell_reply(const char *msg) {
+    if (!msg) return;
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)msg, strlen(msg));
     if(cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 }
+
+void set_status_leds(int l0, int l1, int l2) {
+    gpio_pin_set_dt(&led0, l0);
+    gpio_pin_set_dt(&led1, l1);
+    gpio_pin_set_dt(&led2, l2);
+}
+
+// process_command is now in shell_commands.c
+// #include "shell_commands.h" (Moved to top)
 
 int initialize_lora(void)
 {
@@ -446,9 +406,10 @@ const char* get_error_string(int error) {
     }
 }
 
+// Exposed for shell_commands.c
 void process_lora_command(char *cmd_line)
 {
-    char response[256];
+    char response[384]; // Increased size to prevent warning
     const char *status_msg;
     
     if (!lora_initialized) {
@@ -518,7 +479,7 @@ void process_lora_command(char *cmd_line)
             for (size_t i = 0; i < data_len; i++) {
                 snprintf(&debug_hex[i*3], 4, "%02X ", tx_data[i]);
             }
-            snprintf(response, sizeof(response), "DEBUG: Sending bytes: %s\r\n", debug_hex);
+            snprintf(response, sizeof(response), "DEBUG: Sending bytes %s\r\n", debug_hex);
             safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
             if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
             
@@ -620,11 +581,6 @@ int main(void)
     INIT_GPIO(cjtag1, GPIO_INPUT);
     INIT_GPIO(cjtag2, GPIO_INPUT);
     INIT_GPIO(cjtag3, GPIO_INPUT);
-
-    // INIT_GPIO(sx1262_cs_pin, GPIO_OUTPUT_INACTIVE);
-    // INIT_GPIO(sx1262_reset_pin, GPIO_OUTPUT_ACTIVE); 
-    // INIT_GPIO(sx1262_busy_pin, GPIO_INPUT);
-    // INIT_GPIO(sx1262_dio1_pin, GPIO_INPUT);
 
     gpio_pin_set_dt(&pin_reset, 1);
     

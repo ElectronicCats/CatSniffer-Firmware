@@ -104,17 +104,17 @@
 &zephyr_udc0 {
     cdc_acm_uart0: cdc_acm_uart0 {
         compatible = "zephyr,cdc-acm-uart";
-        label = "CDC_ACM_0";
+        label = "Cat-Bridge";
     };
     
     cdc_acm_uart1: cdc_acm_uart1 {
         compatible = "zephyr,cdc-acm-uart";
-        label = "CDC_ACM_1";
+        label = "Cat-LoRa";
     };
 
     cdc_acm_uart2: cdc_acm_uart2 {
         compatible = "zephyr,cdc-acm-uart";
-        label = "CDC_ACM_2";
+        label = "Cat-Shell";
     };
 };
 
