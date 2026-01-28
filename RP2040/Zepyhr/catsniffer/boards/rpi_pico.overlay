@@ -90,12 +90,12 @@
         };
         
         sx1262_busy_pin: sx1262-busy {
-            gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
             label = "SX1262_BUSY";
         };
         
         sx1262_dio1_pin: sx1262-dio1 {
-            gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
             label = "SX1262_DIO1";
         };
     };
@@ -110,6 +110,11 @@
     cdc_acm_uart1: cdc_acm_uart1 {
         compatible = "zephyr,cdc-acm-uart";
         label = "CDC_ACM_1";
+    };
+
+    cdc_acm_uart2: cdc_acm_uart2 {
+        compatible = "zephyr,cdc-acm-uart";
+        label = "CDC_ACM_2";
     };
 };
 
@@ -133,8 +138,8 @@
         spi-max-frequency = <1000000>;
         
         reset-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
-        busy-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
-        dio1-gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+        busy-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+        dio1-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
     };
 };
 
