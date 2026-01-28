@@ -9,30 +9,37 @@ LOG_MODULE_REGISTER(catsniffer_main, LOG_LEVEL_INF);
 
 #define CDC0_NODE DT_NODELABEL(cdc_acm_uart0)
 #define CDC1_NODE DT_NODELABEL(cdc_acm_uart1)
+#define CDC2_NODE DT_NODELABEL(cdc_acm_uart2)
 
 // Device definitions
 #define CC1352_UART  DEVICE_DT_GET(DT_CHOSEN(uart_cc1352))
 #define CDC0_DEV  DEVICE_DT_GET(CDC0_NODE)
 #define CDC1_DEV  DEVICE_DT_GET(CDC1_NODE)
+#define CDC2_DEV  DEVICE_DT_GET(CDC2_NODE)
 
 // Communication buffers 
 uint8_t ring_cc1352_to_usb[RING_BUF_SIZE];
 uint8_t ring_usb_to_cc1352[RING_BUF_SIZE];
 uint8_t ring_sx1262_to_usb[RING_BUF_SIZE];
 uint8_t ring_usb_to_sx1262[RING_BUF_SIZE];
+uint8_t ring_config_to_usb[RING_BUF_SIZE];
+uint8_t ring_usb_to_config[RING_BUF_SIZE];
 
 struct ring_buf rb_cc1352_to_usb;
 struct ring_buf rb_usb_to_cc1352;
 struct ring_buf rb_sx1262_to_usb;
 struct ring_buf rb_usb_to_sx1262;
+struct ring_buf rb_config_to_usb;
+struct ring_buf rb_usb_to_config;
 
 // Device references 
 const struct device *uart_cc1352;
 const struct device *cdc0_dev;
 const struct device *cdc1_dev;
+const struct device *cdc2_dev;
 
-// Command recognition pattern
-//B1 C3 BF 3C 62
+// Command recognition pattern not needed for CDC0 anymore
+// But needed for CDC2
 const uint8_t commandID[4] = {0xB1, 0xC3, 0xBF, 0x3C};
 
 // Global catsniffer instance  
@@ -144,8 +151,33 @@ static void cc1352_uart_interrupt_handler(const struct device *dev, void *user_d
     }
 }
 
-// CDC0 (CC1352) interrupt handler - RACE CONDITION FIXED
+// CDC0 (CC1352) interrupt handler - PURE BRIDGE
 static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
+{
+    while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
+        if (uart_irq_rx_ready(dev)) {
+            uint8_t buf[64];
+            int len = uart_fifo_read(dev, buf, sizeof(buf));
+            if (len > 0) {
+                safe_ring_buf_put(&rb_usb_to_cc1352, buf, len);
+                uart_irq_tx_enable(uart_cc1352);
+            }
+        }
+        
+        if (uart_irq_tx_ready(dev)) {
+            uint8_t buf[64];
+            int len = safe_ring_buf_get(&rb_cc1352_to_usb, buf, sizeof(buf));
+            if (len > 0) {
+                uart_fifo_fill(dev, buf, len);
+            } else {
+                uart_irq_tx_disable(dev);
+            }
+        }
+    }
+}
+
+// CDC2 (Config/Debug) interrupt handler - TEXT SHELL
+static void cdc2_interrupt_handler(const struct device *dev, void *user_data)
 {
     while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
         if (uart_irq_rx_ready(dev)) {
@@ -155,41 +187,26 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
             for (int i = 0; i < len; i++) {
                 uint8_t data = buf[i];
                 
-                if (data == commandID[catsniffer.command_counter]) {
-                    catsniffer.command_counter++;
-                    if (catsniffer.command_counter == 4) {
-                        catsniffer.command_recognized = true;
-                        continue;
+                // Echo back for terminal feeling? 
+                // safe_ring_buf_put(&rb_config_to_usb, &data, 1);
+                // uart_irq_tx_enable(dev);
+
+                // Simple line buffering
+                if (data == '\n' || data == '\r') {
+                    if (catsniffer.command_data_len > 0) {
+                        catsniffer.command_data[catsniffer.command_data_len] = '\0';
+                        process_command(catsniffer.command_data, catsniffer.command_data_len);
+                        catsniffer.command_data_len = 0;
                     }
-                } else if (!catsniffer.command_recognized) {
-                    catsniffer.command_counter = 0;
-                }
-                
-                if (catsniffer.command_recognized) {
-                    if (catsniffer.command_data_len < COMMAND_BUF_SIZE - 1) {
-                        catsniffer.command_data[catsniffer.command_data_len++] = data;
-                    }
-                    
-                if (catsniffer.command_data_len >= 3 &&
-                    catsniffer.command_data[catsniffer.command_data_len-3] == 0xC3 &&
-                    catsniffer.command_data[catsniffer.command_data_len-2] == 0xBF &&  
-                    catsniffer.command_data[catsniffer.command_data_len-1] == 0xC3) {  
-                        
-                    process_command(catsniffer.command_data, catsniffer.command_data_len);
-                    catsniffer.command_recognized = false;
-                    catsniffer.command_data_len = 0;
-                    catsniffer.command_counter = 0;
-                    }
-                } else {
-                    safe_ring_buf_put(&rb_usb_to_cc1352, &data, 1);
-                    uart_irq_tx_enable(uart_cc1352);
+                } else if (catsniffer.command_data_len < COMMAND_BUF_SIZE - 1) {
+                    catsniffer.command_data[catsniffer.command_data_len++] = data;
                 }
             }
         }
         
         if (uart_irq_tx_ready(dev)) {
             uint8_t buf[64];
-            int len = safe_ring_buf_get(&rb_cc1352_to_usb, buf, sizeof(buf));
+            int len = safe_ring_buf_get(&rb_config_to_usb, buf, sizeof(buf));
             if (len > 0) {
                 uart_fifo_fill(dev, buf, len);
             } else {
@@ -307,82 +324,60 @@ void change_mode(unsigned long new_mode)
 
 void process_command(char *cmd, size_t len)
 {
-    char debug_msg[128];
-    
-    // The buffer contains: ['b', 'o', 'o', 't', '>', 0xFF, 0xF1]
-    // We need to extract just the payload before the '>'
-    
-    char *payload_end = NULL;
-    for (size_t i = 0; i < len; i++) {
-        if (cmd[i] == '>') {
-            payload_end = &cmd[i];
-            break;
-        }
-    }
-    
-    if (!payload_end) {
-        snprintf(debug_msg, sizeof(debug_msg), "ERROR: No > found\n");
-        safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)debug_msg, strlen(debug_msg));
-        uart_irq_tx_enable(cdc0_dev);
-        return;
-    }
-    
-    size_t payload_len = payload_end - cmd;
-    
-    char payload[64];
-    if (payload_len >= sizeof(payload)) {
-        snprintf(debug_msg, sizeof(debug_msg), "ERROR: Payload too long\n");
-        safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)debug_msg, strlen(debug_msg));
-        uart_irq_tx_enable(cdc0_dev);
-        return;
-    }
-    
-    memcpy(payload, cmd, payload_len);
-    payload[payload_len] = '\0';
+    // Clean up command (remove possible trailing wrapper data if we kept it, but now we have clean strings)
+    // Actually, with the new parser, cmd is just the null-terminated string.
     
     const char *response;
     
-    if (strcmp(payload, "boot") == 0) {
+    if (strcmp(cmd, "boot") == 0) {
         change_mode(BOOT);
-        response = "BOOT\n";
+        response = "BOOT\r\n";
         gpio_pin_set_dt(&led0, 0);
         gpio_pin_set_dt(&led1, 0);
         gpio_pin_set_dt(&led2, catsniffer.mode);
     }
-    else if (strcmp(payload, "exit") == 0) {
+    else if (strcmp(cmd, "exit") == 0) {
         change_mode(PASSTHROUGH);
-        response = "PASSTHROUGH\n";
+        response = "PASSTHROUGH\r\n";
         gpio_pin_set_dt(&led0, 0);
         gpio_pin_set_dt(&led1, 0);
         gpio_pin_set_dt(&led2, 0);
     }
-    else if (strcmp(payload, "band1") == 0) {
+    else if (strcmp(cmd, "band1") == 0) {
         change_band(GIG);
-        response = "2.4GHz Band\n";
+        response = "2.4GHz Band\r\n";
         gpio_pin_set_dt(&led0, 0);
         gpio_pin_set_dt(&led1, 0);
         gpio_pin_set_dt(&led2, 0);
     }
-    else if (strcmp(payload, "band2") == 0) {
+    else if (strcmp(cmd, "band2") == 0) {
         change_band(SUBGIG_1);
-        response = "SUB-GHz Band\n";
+        response = "SUB-GHz Band\r\n";
         gpio_pin_set_dt(&led0, 0);
         gpio_pin_set_dt(&led1, 0);
         gpio_pin_set_dt(&led2, 0);
     }
-    else if (strcmp(payload, "band3") == 0) {
+    else if (strcmp(cmd, "band3") == 0) {
         change_band(SUBGIG_2);
-        response = "LoRa Band\n";
+        response = "LoRa Band\r\n";
         gpio_pin_set_dt(&led0, 0);
         gpio_pin_set_dt(&led1, 0);
         gpio_pin_set_dt(&led2, 0);
+    }
+    else if (strncmp(cmd, "TEST", 4) == 0) {
+        process_lora_command(cmd);
+        return; // process_lora_command handles output
+    }
+    else if (strncmp(cmd, "TX ", 3) == 0) {
+        process_lora_command(cmd);
+        return; // process_lora_command handles output
     }
     else {
-        response = "UNKNOWN\n";
+        response = "UNKNOWN\r\n";
     }
     
-    safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)response, strlen(response));
-    uart_irq_tx_enable(cdc0_dev);
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+    if(cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 }
 
 int initialize_lora(void)
@@ -390,27 +385,27 @@ int initialize_lora(void)
     const char *status_msg;
     
     if (lora_initialized) {
-        status_msg = "LoRa: Already initialized\n";
-        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        status_msg = "LoRa: Already initialized\r\n";
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return 0;
     }
     
-    status_msg = "LoRa: Starting initialization...\n";
-    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    status_msg = "LoRa: Starting initialization...\r\n";
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
     
     lora_dev = DEVICE_DT_GET(DT_ALIAS(lora0));
     if (!device_is_ready(lora_dev)) {
-        status_msg = "ERROR: LoRa device not ready\n";
-        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        status_msg = "ERROR: LoRa device not ready\r\n";
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return -ENODEV;
     }
     
-    status_msg = "LoRa: Device ready\n";
-    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    status_msg = "LoRa: Device ready\r\n";
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
     
     struct lora_modem_config config;
     config.frequency = 915000000;
@@ -423,16 +418,16 @@ int initialize_lora(void)
     
     int ret = lora_config(lora_dev, &config);
     if (ret < 0) {
-        status_msg = "ERROR: LoRa configuration failed\n";
-        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        status_msg = "ERROR: LoRa configuration failed\r\n";
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return ret;
     }
     
     lora_initialized = true;
-    status_msg = "LoRa: Initialization completed!\n";
-    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    status_msg = "LoRa: Initialization completed!\r\n";
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
     
     return 0;
 }
@@ -462,17 +457,37 @@ void process_lora_command(char *cmd_line)
     }
     
     if (strncmp(cmd_line, "TEST", 4) == 0) {
-        status_msg = "TEST: LoRa ready!\n";
-        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        status_msg = "TEST: LoRa ready!\r\n";
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
+        return;
+    }
+
+    if (strncmp(cmd_line, "TXTEST", 6) == 0) {
+        if (!lora_initialized) {
+            status_msg = "ERROR: LoRa not initialized\r\n";
+            safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+            if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
+            return;
+        }
+        
+        uint8_t tx_data[] = "PING"; // Simple payload
+        status_msg = "DEBUG: Sending PING packet\r\n";
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
+
+        int ret = lora_send(lora_dev, tx_data, sizeof(tx_data));
+        snprintf(response, sizeof(response), "TX Result: %d (%s)\r\n", ret, get_error_string(ret));
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return;
     }
     
     if (strncmp(cmd_line, "TX ", 3) == 0) {
         if (!lora_initialized) {
-            status_msg = "ERROR: LoRa not initialized\n";
-            safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-            if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+            status_msg = "ERROR: LoRa not initialized\r\n";
+            safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+            if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
             return;
         }
         
@@ -481,17 +496,17 @@ void process_lora_command(char *cmd_line)
         size_t hex_len = strlen(hex_data);
         
         // Debug: Show what we're trying to send
-        snprintf(response, sizeof(response), "DEBUG: Hex input '%s', length %zu\n", hex_data, hex_len);
-        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
-        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        snprintf(response, sizeof(response), "DEBUG: Hex input '%s', length %zu\r\n", hex_data, hex_len);
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         
         if (hex_len % 2 == 0 && hex_len > 0) {
             size_t data_len = hex_len / 2;
             
             // Debug: Check data length
-            snprintf(response, sizeof(response), "DEBUG: Converting to %zu bytes\n", data_len);
-            safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
-            if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+            snprintf(response, sizeof(response), "DEBUG: Converting to %zu bytes\r\n", data_len);
+            safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+            if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
             
             for (size_t i = 0; i < data_len; i++) {
                 char hex_byte[3] = {hex_data[i*2], hex_data[i*2+1], '\0'};
@@ -503,27 +518,27 @@ void process_lora_command(char *cmd_line)
             for (size_t i = 0; i < data_len; i++) {
                 snprintf(&debug_hex[i*3], 4, "%02X ", tx_data[i]);
             }
-            snprintf(response, sizeof(response), "DEBUG: Sending bytes: %s\n", debug_hex);
-            safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
-            if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+            snprintf(response, sizeof(response), "DEBUG: Sending bytes: %s\r\n", debug_hex);
+            safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+            if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
             
             // Try to send
             int ret = lora_send(lora_dev, tx_data, data_len);
-            snprintf(response, sizeof(response), "TX Result: %d (%s)\n", ret, get_error_string(ret));
+            snprintf(response, sizeof(response), "TX Result: %d (%s)\r\n", ret, get_error_string(ret));
             
         } else {
-            status_msg = "ERROR: Invalid hex data length\n";
+            status_msg = "ERROR: Invalid hex data length\r\n";
             snprintf(response, sizeof(response), "%s", status_msg);
         }
         
-        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)response, strlen(response));
-        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return;
     }
     
-    status_msg = "Available: TEST, TX <hex>\n";
-    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)status_msg, strlen(status_msg));
-    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+    status_msg = "Available: TEST, TX <hex>\r\n";
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+    if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 }
 
 // LoRa thread function 
@@ -550,6 +565,33 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
                     command_buffer[cmd_len++] = c;
                 }
             }
+        } else {
+            // No command pending, try to receive
+            if (lora_initialized) {
+                 uint8_t rx_data[255];
+                 int16_t rssi;
+                 int8_t snr;
+                 
+                 int ret = lora_recv(lora_dev, rx_data, sizeof(rx_data), K_NO_WAIT, &rssi, &snr);
+                 if (ret > 0) {
+                     char rx_msg[384]; // Ensure enough space
+                     
+                     // Create a properly formatted hex string of the data
+                     char data_str[128] = {0}; // Limit display length
+                     int display_len = (ret > 40) ? 40 : ret; // Cap at 40 bytes for display
+                     
+                     for(int i=0; i<display_len; i++) {
+                         char byte_str[4];
+                         snprintf(byte_str, sizeof(byte_str), "%02X", rx_data[i]);
+                         strcat(data_str, byte_str);
+                     }
+                     if (ret > 40) strcat(data_str, "...");
+
+                     snprintf(rx_msg, sizeof(rx_msg), "RX: %s | RSSI: %d | SNR: %d\r\n", data_str, rssi, snr);
+                     safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)rx_msg, strlen(rx_msg));
+                     if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
+                 }
+            }
         }
         k_msleep(10);
     }
@@ -562,6 +604,7 @@ int main(void)
     uart_cc1352 = CC1352_UART;
     cdc0_dev = CDC0_DEV;
     cdc1_dev = CDC1_DEV; 
+    cdc2_dev = CDC2_DEV; 
     
     // Initialize GPIO
     INIT_GPIO(pin_reset, GPIO_OUTPUT);
@@ -620,10 +663,13 @@ int main(void)
     gpio_pin_set_dt(&led0, 1);
 
     // Initialize ALL ring buffers
+    // Initialize ALL ring buffers
     ring_buf_init(&rb_cc1352_to_usb, sizeof(ring_cc1352_to_usb), ring_cc1352_to_usb);
     ring_buf_init(&rb_usb_to_cc1352, sizeof(ring_usb_to_cc1352), ring_usb_to_cc1352);
     ring_buf_init(&rb_sx1262_to_usb, sizeof(ring_sx1262_to_usb), ring_sx1262_to_usb);
     ring_buf_init(&rb_usb_to_sx1262, sizeof(ring_usb_to_sx1262), ring_usb_to_sx1262);
+    ring_buf_init(&rb_config_to_usb, sizeof(ring_config_to_usb), ring_config_to_usb);
+    ring_buf_init(&rb_usb_to_config, sizeof(ring_usb_to_config), ring_usb_to_config);
     
     // Configure UART
     struct uart_config uart_cfg;
@@ -639,6 +685,11 @@ int main(void)
     if (cdc1_dev) {
         uart_irq_callback_set(cdc1_dev, cdc1_interrupt_handler);
         uart_irq_rx_enable(cdc1_dev);
+    }
+
+    if (cdc2_dev) {
+        uart_irq_callback_set(cdc2_dev, cdc2_interrupt_handler);
+        uart_irq_rx_enable(cdc2_dev);
     }
     
     uart_irq_callback_set(uart_cc1352, cc1352_uart_interrupt_handler);
@@ -659,17 +710,19 @@ int main(void)
     
     // Send startup message AFTER everything is initialized
     k_msleep(1000); // Wait a moment for USB to be ready
-    const char *startup_msg = "Catsniffer Firmware Ready - Send commands!\n";
-    safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
-    uart_irq_tx_enable(cdc0_dev);
-    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
+    const char *startup_msg = "Catsniffer Firmware Ready - Config Port\n";
+    safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
+    uart_irq_tx_enable(cdc2_dev);
+
+    const char *lora_welcome = "LoRa Control Port\n";
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)lora_welcome, strlen(lora_welcome));
     uart_irq_tx_enable(cdc1_dev);
 
     ret = initialize_lora();
     if (ret < 0) {
-        const char *startup_msg = "LoRa initialization failed\n";
-        safe_ring_buf_put(&rb_cc1352_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
-        uart_irq_tx_enable(cdc1_dev);
+        const char *startup_msg = "LoRa initialization failed\r\n";
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)startup_msg, strlen(startup_msg));
+        if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
     }
 
     // Start LoRa thread
