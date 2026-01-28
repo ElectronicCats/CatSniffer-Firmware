@@ -5,9 +5,10 @@
 
 # python
 .venv
+.cache
 
 # build
-/build*
+build
 /twister-out*
 
 __pycache__/
