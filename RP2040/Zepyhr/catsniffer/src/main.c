@@ -159,10 +159,14 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
         if (uart_irq_rx_ready(dev)) {
             uint8_t buf[64];
             int len = uart_fifo_read(dev, buf, sizeof(buf));
-            if (len > 0) {
-                safe_ring_buf_put(&rb_usb_to_cc1352, buf, len);
+
+            for (int i = 0; i < len; i++) {
+                uint8_t data = buf[i];
+                
+                ring_buf_put(&rb_usb_to_cc1352, &data, 1);
                 uart_irq_tx_enable(uart_cc1352);
             }
+
         }
         
         if (uart_irq_tx_ready(dev)) {
