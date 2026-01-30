@@ -46,6 +46,9 @@ static void cmd_lora_bw(char *args);
 static void cmd_lora_cr(char *args);
 static void cmd_lora_power(char *args);
 static void cmd_lora_mode(char *args);
+static void cmd_lora_preamble(char *args);
+static void cmd_lora_syncword(char *args);
+static void cmd_lora_iq(char *args);
 static void cmd_lora_config(char *args);
 static void cmd_lora_apply(char *args);
 
@@ -65,6 +68,9 @@ static const shell_cmd_t commands[] = {
     {"lora_cr",     cmd_lora_cr,     "Set coding rate",            true},
     {"lora_power",  cmd_lora_power,  "Set TX power (dBm)",         true},
     {"lora_mode",   cmd_lora_mode,   "stream|command mode",        true},
+    {"lora_preamble", cmd_lora_preamble, "Set preamble length",    true},
+    {"lora_syncword", cmd_lora_syncword, "private|public network", true},
+    {"lora_iq",     cmd_lora_iq,     "normal|inverted IQ",         true},
     {"lora_config", cmd_lora_config, "Show LoRa config",           false},
     {"lora_apply",  cmd_lora_apply,  "Apply pending config",       false},
     {NULL,          NULL,            NULL,                         false}
@@ -300,10 +306,82 @@ static void cmd_lora_mode(char *args) {
     }
 }
 
+static void cmd_lora_preamble(char *args) {
+    // Skip command name to get argument
+    while (*args && *args != ' ') args++;
+    while (*args == ' ') args++;
+
+    if (*args == '\0') {
+        shell_reply("Usage: lora_preamble <6-65535>\r\n");
+        return;
+    }
+
+    int preamble = atoi(args);
+    if (preamble < 6 || preamble > 65535) {
+        shell_reply("Error: Preamble length must be 6-65535\r\n");
+        return;
+    }
+
+    catsniffer.lora_config.preamble_len = (uint16_t)preamble;
+    catsniffer.lora_config.config_pending = true;
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Preamble length set to %d (pending)\r\n", preamble);
+    shell_reply(buf);
+}
+
+static void cmd_lora_syncword(char *args) {
+    // Skip command name to get argument
+    while (*args && *args != ' ') args++;
+    while (*args == ' ') args++;
+
+    if (*args == '\0') {
+        shell_reply("Usage: lora_syncword <private|public>\r\n");
+        return;
+    }
+
+    if (strncmp(args, "private", 7) == 0) {
+        catsniffer.lora_config.public_network = false;
+        catsniffer.lora_config.config_pending = true;
+        shell_reply("Sync word set to PRIVATE (0x12) (pending)\r\n");
+    } else if (strncmp(args, "public", 6) == 0) {
+        catsniffer.lora_config.public_network = true;
+        catsniffer.lora_config.config_pending = true;
+        shell_reply("Sync word set to PUBLIC (0x34) (pending)\r\n");
+    } else {
+        shell_reply("Error: Must be 'private' or 'public'\r\n");
+    }
+}
+
+static void cmd_lora_iq(char *args) {
+    // Skip command name to get argument
+    while (*args && *args != ' ') args++;
+    while (*args == ' ') args++;
+
+    if (*args == '\0') {
+        shell_reply("Usage: lora_iq <normal|inverted>\r\n");
+        return;
+    }
+
+    if (strncmp(args, "normal", 6) == 0) {
+        catsniffer.lora_config.iq_inverted = false;
+        catsniffer.lora_config.config_pending = true;
+        shell_reply("IQ set to NORMAL (pending)\r\n");
+    } else if (strncmp(args, "inverted", 8) == 0) {
+        catsniffer.lora_config.iq_inverted = true;
+        catsniffer.lora_config.config_pending = true;
+        shell_reply("IQ set to INVERTED (pending)\r\n");
+    } else {
+        shell_reply("Error: Must be 'normal' or 'inverted'\r\n");
+    }
+}
+
 static void cmd_lora_config(char *args) {
     char buf[512];
     const char *mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ? "Stream" : "Command";
     const char *pending_str = catsniffer.lora_config.config_pending ? " (pending apply)" : "";
+    const char *iq_str = catsniffer.lora_config.iq_inverted ? "Inverted" : "Normal";
+    const char *syncword_str = catsniffer.lora_config.public_network ? "Public (0x34)" : "Private (0x12)";
 
     snprintf(buf, sizeof(buf),
         "LoRa Configuration:%s\r\n"
@@ -313,6 +391,8 @@ static void cmd_lora_config(char *args) {
         "  Coding Rate: 4/%d\r\n"
         "  TX Power: %d dBm\r\n"
         "  Preamble Length: %d\r\n"
+        "  IQ: %s\r\n"
+        "  Sync Word: %s\r\n"
         "  Mode: %s\r\n",
         pending_str,
         catsniffer.lora_config.frequency,
@@ -324,6 +404,8 @@ static void cmd_lora_config(char *args) {
         (catsniffer.lora_config.coding_rate == CR_4_7) ? 7 : 8,
         catsniffer.lora_config.tx_power,
         catsniffer.lora_config.preamble_len,
+        iq_str,
+        syncword_str,
         mode_str);
     shell_reply(buf);
 }

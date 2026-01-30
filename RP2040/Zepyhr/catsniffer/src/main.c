@@ -392,8 +392,8 @@ int initialize_lora(void)
     config.coding_rate = catsniffer.lora_config.coding_rate;
     config.tx_power = catsniffer.lora_config.tx_power;
     config.tx = false;  // Start in RX mode to enable receiving
-    config.iq_inverted = false;
-    config.public_network = false;
+    config.iq_inverted = catsniffer.lora_config.iq_inverted;
+    config.public_network = catsniffer.lora_config.public_network;
 
     int ret = lora_config(lora_dev, &config);
     if (ret < 0) {
@@ -442,8 +442,8 @@ int apply_lora_config(void)
     config.coding_rate = catsniffer.lora_config.coding_rate;
     config.tx_power = catsniffer.lora_config.tx_power;
     config.tx = false;  // Configure for RX mode
-    config.iq_inverted = false;
-    config.public_network = false;
+    config.iq_inverted = catsniffer.lora_config.iq_inverted;
+    config.public_network = catsniffer.lora_config.public_network;
 
     int ret = lora_config(lora_dev, &config);
 
@@ -562,6 +562,7 @@ void process_lora_command(char *cmd_line)
             safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
             if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 
+            lora_stop_rx();
             // Switch to TX mode, send, then back to RX mode
             lora_set_tx_mode();
             int ret = lora_send(lora_dev, tx_data, data_len);
@@ -605,8 +606,8 @@ static int lora_set_tx_mode(void)
     config.coding_rate = catsniffer.lora_config.coding_rate;
     config.tx_power = catsniffer.lora_config.tx_power;
     config.tx = true;
-    config.iq_inverted = false;
-    config.public_network = false;
+    config.iq_inverted = catsniffer.lora_config.iq_inverted;
+    config.public_network = catsniffer.lora_config.public_network;
     return lora_config(lora_dev, &config);
 }
 
@@ -621,8 +622,8 @@ static int lora_start_rx_async(void)
     config.coding_rate = catsniffer.lora_config.coding_rate;
     config.tx_power = catsniffer.lora_config.tx_power;
     config.tx = false; // <--- RX Mode
-    config.iq_inverted = false;
-    config.public_network = false;
+    config.iq_inverted = catsniffer.lora_config.iq_inverted;
+    config.public_network = catsniffer.lora_config.public_network;
 
     // 1. Aplicar configuración física primero
     int ret = lora_config(lora_dev, &config);
@@ -761,6 +762,8 @@ int main(void)
     catsniffer.lora_config.coding_rate = CR_4_5;
     catsniffer.lora_config.tx_power = 20;
     catsniffer.lora_config.preamble_len = 12;
+    catsniffer.lora_config.iq_inverted = false;
+    catsniffer.lora_config.public_network = false;
     catsniffer.lora_config.config_pending = false;
     catsniffer.lora_initialized = false;
     catsniffer.lora_config_lock = false;
