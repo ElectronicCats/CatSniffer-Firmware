@@ -182,12 +182,12 @@ jobs:
           # Determine model based on PR size thresholds
           if [ "$TOTAL_LINES" -ge 10000 ] || [ "$FILES" -ge 60 ]; then
             # Massive PR: extreme changes
-            SELECTED_MODEL="opus-4.5"
-            REASON="Massive PR: Claude Opus (priority), fallback: GPT-5-high, then Gemini-3-pro"
+            SELECTED_MODEL="sonnet-4.5"
+            REASON="Massive PR: Claude Sonnet (priority), fallback: GPT-5-high, then Gemini-3-pro"
           elif [ "$TOTAL_LINES" -ge 3000 ] || [ "$FILES" -ge 40 ]; then
             # Large PR: many changes and files
-            SELECTED_MODEL="opus-4.5"
-            REASON="Very large PR: Claude Opus (priority), fallback: GPT-5-high, then Gemini-3-pro"
+            SELECTED_MODEL="sonnet-4.5"
+            REASON="Very large PR: Claude Sonnet (priority), fallback: GPT-5-high, then Gemini-3-pro"
           elif [ "$TOTAL_LINES" -ge 1500 ] || [ "$FILES" -ge 25 ]; then
             # Medium-large PR: significant changes
             SELECTED_MODEL="sonnet-4.5"
