@@ -1,6 +1,6 @@
 /*
  * Catsniffer Dual USB CDC-ACM Header
- * Eduardo Contreras @ Electronic Cats
+ * Eduardo Contreras @ Electronic Cats 2026
  */
 
 #ifndef CATSNIFFER_H
@@ -48,9 +48,26 @@ enum MODE {
 // Band definitions
 enum BAND {
     GIG = 0,      // 2.4GHz CC1352
-    SUBGIG_1 = 1, // Sub-GHz CC1352  
+    SUBGIG_1 = 1, // Sub-GHz CC1352
     SUBGIG_2 = 2  // LoRa SX1262
 };
+
+// LoRa mode definitions
+enum LORA_MODE {
+    LORA_MODE_STREAM = 0,   // Default: raw binary
+    LORA_MODE_COMMAND = 1,  // Text commands
+};
+
+// LoRa configuration structure
+typedef struct {
+    uint32_t frequency;         // Hz (default: 915000000)
+    uint8_t spreading_factor;   // SF_7 to SF_12 (default: SF_7)
+    uint8_t bandwidth;          // BW_125_KHZ, BW_250_KHZ, BW_500_KHZ (default: BW_125_KHZ)
+    uint8_t coding_rate;        // CR_4_5, CR_4_6, CR_4_7, CR_4_8 (default: CR_4_5)
+    int8_t tx_power;            // -9 to 22 dBm (default: 20)
+    uint16_t preamble_len;      // Default: 12
+    bool config_pending;        // true if changes not yet applied
+} lora_config_t;
 
 // Catsniffer state structure
 typedef struct {
@@ -63,17 +80,14 @@ typedef struct {
     uint8_t command_counter;
     char command_data[COMMAND_BUF_SIZE];
     size_t command_data_len;
+    // LoRa state
+    uint8_t lora_mode;           // LORA_MODE_STREAM or LORA_MODE_COMMAND
+    lora_config_t lora_config;   // Current LoRa configuration
+    bool lora_initialized;       // Track initialization state
 } catsniffer_t;
-
-// Command recognition pattern
-extern const uint8_t commandID[4];
 
 // Global catsniffer instance
 extern catsniffer_t catsniffer;
-
-// Catsniffer command format
-// Commands are wrapped in: ñÿ<command>ÿñ
-// Example: ñÿ<boot>ÿñ to enter bootloader mode
 
 // LoRa command format (CDC1):
 // TX <hex_data>     - Send LoRa packet (e.g., "TX 48656C6C6F")
@@ -84,14 +98,12 @@ extern catsniffer_t catsniffer;
 // STATUS            - Get device status
 
 // Function prototypes
-// Function prototypes
 void  reset_cc1352(void);
 void  boot_mode_cc1352(void);
 void  change_baud(unsigned long new_baud);
 void  change_band(unsigned long new_band);
 void  change_mode(unsigned long new_mode);
-// process_command is in shell_commands.h now
-// void process_command(char *cmd, size_t len); 
 void  process_lora_command(char *cmd_line);
+int   apply_lora_config(void);
 
 #endif /* CATSNIFFER_H */
