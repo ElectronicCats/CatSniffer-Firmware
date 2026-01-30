@@ -9,31 +9,30 @@
   member) at the local, and you've found our code helpful,
   please buy us a round!
   Distributed as-is; no warranty is given.
-  
+
 */
 #include <Catsniffer.h>
 
-static void help(){
-  char *arg = CatCMDHandler.next(); 
-  Serial.println("SerialCommands");
-  if (arg != NULL){
-    Serial.print("Args: ");
-    Serial.println(arg);
-  }
+static void help() {
+    char* arg = CatCMDHandler.next();
+    Serial.println("SerialCommands");
+    if(arg != NULL) {
+        Serial.print("Args: ");
+        Serial.println(arg);
+    }
 }
 
-static void showLoRaCommands(){
-  CatCMDHandler.showCommands();
+static void showLoRaCommands() {
+    CatCMDHandler.showCommands();
 }
 
 void setup() {
-  CatCMDHandler.addCommand("help", help);
-  CatCMDHandler.addCommand("cmd", showLoRaCommands);
+    CatCMDHandler.addCommand("help", help);
+    CatCMDHandler.addCommand("cmd", showLoRaCommands);
 
-  catsnifferPassCommandBegin();
-  
+    catsnifferPassCommandBegin();
 }
 
 void loop() {
-  catsnifferCommandProcess();
+    catsnifferCommandProcess();
 }

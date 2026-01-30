@@ -83,17 +83,17 @@
             gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
             label = "SX1262_CS";
         };
-        
+
         sx1262_reset_pin: sx1262-reset {
             gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
             label = "SX1262_RESET";
         };
-        
+
         sx1262_busy_pin: sx1262-busy {
             gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
             label = "SX1262_BUSY";
         };
-        
+
         sx1262_dio1_pin: sx1262-dio1 {
             gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
             label = "SX1262_DIO1";
@@ -106,7 +106,7 @@
         compatible = "zephyr,cdc-acm-uart";
         label = "Cat-Bridge";
     };
-    
+
     cdc_acm_uart1: cdc_acm_uart1 {
         compatible = "zephyr,cdc-acm-uart";
         label = "Cat-LoRa";
@@ -125,18 +125,18 @@
     pinctrl-names = "default";
 };
 
-// Enable and configure SPI for SX1262 
+// Enable and configure SPI for SX1262
 &spi0 {
     status = "okay";
     pinctrl-0 = <&spi0_default>;
     pinctrl-names = "default";
     cs-gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
-    
+
     sx1262: sx1262@0 {
         compatible = "semtech,sx1262";
         reg = <0>;
         spi-max-frequency = <1000000>;
-        
+
         reset-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
         busy-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
         dio1-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
@@ -153,7 +153,7 @@
             input-enable;
         };
     };
-    
+
     spi0_default: spi0_default {
         group1 {
             pinmux = <SPI0_SCK_P18>, <SPI0_TX_P19>;  // GPIO18=SCK, GPIO19=COPI(MOSI)
@@ -168,7 +168,7 @@
 
 /*
  * ACTUAL PIN MAPPING FROM CATSNIFFER SCHEMATIC:
- * 
+ *
  * SX1262 Signal  | Pico GPIO | Pico Pin | Function
  * ---------------|-----------|----------|----------
  * CS             | GPIO17    | Pin 22   | SPI Chip Select (JTAG/TDO when JTAG not used)
@@ -178,7 +178,7 @@
  * RESET          | GPIO24    | Pin 36   | Reset (active low) -> RESET_SX
  * BUSY           | GPIO5     | Pin 6    | Busy indicator
  * DIO1           | GPIO6     | Pin 7    | Interrupt output
- * 
+ *
  * Note: COPI = Controller Out Peripheral In (MOSI)
  *       CIPO = Controller In Peripheral Out (MISO)
  */

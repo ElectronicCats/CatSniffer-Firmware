@@ -8,7 +8,7 @@ For compiling this project is currently using Zephyr 4.1 if you want to compile 
 Once installed correctly you sould load the virtual enviroment
 
 ```bash
-source ~/zephyrproject/.venv/bin/activate    
+source ~/zephyrproject/.venv/bin/activate
 ```
 
 As we are not compiling from the zephyr root project we better export a enviroment variable to be use on west
@@ -31,7 +31,7 @@ export ZEPHYR_BASE=$HOME/zephyrproject/zephyr
 
 You may need to clean the build folder by erasing it
 
-## Flash 
+## Flash
 
 In order to flash the firmware you just need to copy the .uf2 file in build directory to the rp2040
 
@@ -43,7 +43,7 @@ cp build/zephyr/zephyr.uf2 /Volumes/RPI-RP2
 
 ### Catsniffer
 
-Catsniffer main project, includes serial passthrough 
+Catsniffer main project, includes serial passthrough
 
 ### Blink
 

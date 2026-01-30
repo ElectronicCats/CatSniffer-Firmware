@@ -64,8 +64,8 @@ Once you have the libraries, you can run the script.
 > **This firmware version had a blocking serial, yo need to use in a single serial communication** The LED'S will turn on once you connect, if you disconnect and LED's still on, you need to reset the RP2040 using the physical button.
 
 Available commands
-```bash 
-# Available commands are: 
+```bash
+# Available commands are:
 set_start_freq      # Set the start frequency of the range
 set_end_freq        # Set the end frequency of the range
 start               # Initialize the scan
@@ -168,4 +168,3 @@ get_config
 # LoraSniffer
 
 The same base of the `LoRa-CLI` firmware but this is used with `pycatsniffer` to use with wireshark
-

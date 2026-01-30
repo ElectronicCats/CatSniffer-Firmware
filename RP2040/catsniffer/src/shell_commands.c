@@ -12,121 +12,122 @@
 #include "catsniffer.h"
 
 // External functions from main.c
-void shell_reply(const char *msg);
+void shell_reply(const char* msg);
 void change_mode(unsigned long new_mode);
 void change_band(unsigned long new_band);
-void process_lora_command(char *cmd_line);
+void process_lora_command(char* cmd_line);
 void set_status_leds(int l0, int l1, int l2);
 
 extern catsniffer_t catsniffer;
 
 // Command handler type
-typedef void (*cmd_handler_t)(char *args);
+typedef void (*cmd_handler_t)(char* args);
 
 // Command table entry
 typedef struct {
-    const char *name;
+    const char* name;
     cmd_handler_t handler;
-    const char *help;
-    bool prefix_match;  // true for commands with args (TX, TEST)
+    const char* help;
+    bool prefix_match; // true for commands with args (TX, TEST)
 } shell_cmd_t;
 
 // Forward declarations
-static void cmd_help(char *args);
-static void cmd_boot(char *args);
-static void cmd_exit(char *args);
-static void cmd_band1(char *args);
-static void cmd_band2(char *args);
-static void cmd_band3(char *args);
-static void cmd_reboot(char *args);
-static void cmd_status(char *args);
-static void cmd_lora_freq(char *args);
-static void cmd_lora_sf(char *args);
-static void cmd_lora_bw(char *args);
-static void cmd_lora_cr(char *args);
-static void cmd_lora_power(char *args);
-static void cmd_lora_mode(char *args);
-static void cmd_lora_preamble(char *args);
-static void cmd_lora_syncword(char *args);
-static void cmd_lora_iq(char *args);
-static void cmd_lora_config(char *args);
-static void cmd_lora_apply(char *args);
+static void cmd_help(char* args);
+static void cmd_boot(char* args);
+static void cmd_exit(char* args);
+static void cmd_band1(char* args);
+static void cmd_band2(char* args);
+static void cmd_band3(char* args);
+static void cmd_reboot(char* args);
+static void cmd_status(char* args);
+static void cmd_lora_freq(char* args);
+static void cmd_lora_sf(char* args);
+static void cmd_lora_bw(char* args);
+static void cmd_lora_cr(char* args);
+static void cmd_lora_power(char* args);
+static void cmd_lora_mode(char* args);
+static void cmd_lora_preamble(char* args);
+static void cmd_lora_syncword(char* args);
+static void cmd_lora_iq(char* args);
+static void cmd_lora_config(char* args);
+static void cmd_lora_apply(char* args);
 
 // Command table
 static const shell_cmd_t commands[] = {
-    {"help",        cmd_help,        "Show available commands",    false},
-    {"boot",        cmd_boot,        "CC1352 bootloader mode",     false},
-    {"exit",        cmd_exit,        "Return to passthrough",      false},
-    {"band1",       cmd_band1,       "2.4GHz band",                false},
-    {"band2",       cmd_band2,       "SUB-GHz band",               false},
-    {"band3",       cmd_band3,       "LoRa band",                  false},
-    {"reboot",      cmd_reboot,      "RP2040 USB bootloader",      false},
-    {"status",      cmd_status,      "Device status",              false},
-    {"lora_freq",   cmd_lora_freq,   "Set frequency (Hz)",         true},
-    {"lora_sf",     cmd_lora_sf,     "Set spreading factor",       true},
-    {"lora_bw",     cmd_lora_bw,     "Set bandwidth (kHz)",        true},
-    {"lora_cr",     cmd_lora_cr,     "Set coding rate",            true},
-    {"lora_power",  cmd_lora_power,  "Set TX power (dBm)",         true},
-    {"lora_mode",   cmd_lora_mode,   "stream|command mode",        true},
-    {"lora_preamble", cmd_lora_preamble, "Set preamble length",    true},
+    {"help", cmd_help, "Show available commands", false},
+    {"boot", cmd_boot, "CC1352 bootloader mode", false},
+    {"exit", cmd_exit, "Return to passthrough", false},
+    {"band1", cmd_band1, "2.4GHz band", false},
+    {"band2", cmd_band2, "SUB-GHz band", false},
+    {"band3", cmd_band3, "LoRa band", false},
+    {"reboot", cmd_reboot, "RP2040 USB bootloader", false},
+    {"status", cmd_status, "Device status", false},
+    {"lora_freq", cmd_lora_freq, "Set frequency (Hz)", true},
+    {"lora_sf", cmd_lora_sf, "Set spreading factor", true},
+    {"lora_bw", cmd_lora_bw, "Set bandwidth (kHz)", true},
+    {"lora_cr", cmd_lora_cr, "Set coding rate", true},
+    {"lora_power", cmd_lora_power, "Set TX power (dBm)", true},
+    {"lora_mode", cmd_lora_mode, "stream|command mode", true},
+    {"lora_preamble", cmd_lora_preamble, "Set preamble length", true},
     {"lora_syncword", cmd_lora_syncword, "private|public network", true},
-    {"lora_iq",     cmd_lora_iq,     "normal|inverted IQ",         true},
-    {"lora_config", cmd_lora_config, "Show LoRa config",           false},
-    {"lora_apply",  cmd_lora_apply,  "Apply pending config",       false},
-    {NULL,          NULL,            NULL,                         false}
-};
+    {"lora_iq", cmd_lora_iq, "normal|inverted IQ", true},
+    {"lora_config", cmd_lora_config, "Show LoRa config", false},
+    {"lora_apply", cmd_lora_apply, "Apply pending config", false},
+    {NULL, NULL, NULL, false}};
 
 // Command implementations
-static void cmd_help(char *args) {
+static void cmd_help(char* args) {
     shell_reply("Commands:\r\n");
-    for (const shell_cmd_t *cmd = commands; cmd->name != NULL; cmd++) {
+    for(const shell_cmd_t* cmd = commands; cmd->name != NULL; cmd++) {
         char buf[64];
         snprintf(buf, sizeof(buf), "  %-8s - %s\r\n", cmd->name, cmd->help);
         shell_reply(buf);
     }
 }
 
-static void cmd_boot(char *args) {
+static void cmd_boot(char* args) {
     change_mode(BOOT);
     set_status_leds(0, 0, catsniffer.mode);
     shell_reply("BOOT\r\n");
 }
 
-static void cmd_exit(char *args) {
+static void cmd_exit(char* args) {
     change_mode(PASSTHROUGH);
     set_status_leds(0, 0, 0);
     shell_reply("PASSTHROUGH\r\n");
 }
 
-static void cmd_band1(char *args) {
+static void cmd_band1(char* args) {
     change_band(GIG);
     set_status_leds(0, 0, 0);
     shell_reply("2.4GHz Band\r\n");
 }
 
-static void cmd_band2(char *args) {
+static void cmd_band2(char* args) {
     change_band(SUBGIG_1);
     set_status_leds(0, 0, 0);
     shell_reply("SUB-GHz Band\r\n");
 }
 
-static void cmd_band3(char *args) {
+static void cmd_band3(char* args) {
     change_band(SUBGIG_2);
     set_status_leds(0, 0, 0);
     shell_reply("LoRa Band\r\n");
 }
 
-static void cmd_reboot(char *args) {
+static void cmd_reboot(char* args) {
     shell_reply("Entering USB bootloader...\r\n");
     k_msleep(100);
     reset_usb_boot(0, 0);
 }
 
-static void cmd_status(char *args) {
+static void cmd_status(char* args) {
     char buf[256];
-    const char *mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ? "Stream" : "Command";
-    const char *lora_status = catsniffer.lora_initialized ? "initialized" : "not initialized";
-    snprintf(buf, sizeof(buf),
+    const char* mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ? "Stream" : "Command";
+    const char* lora_status = catsniffer.lora_initialized ? "initialized" : "not initialized";
+    snprintf(
+        buf,
+        sizeof(buf),
         "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s\r\n",
         catsniffer.mode,
         catsniffer.band,
@@ -135,18 +136,20 @@ static void cmd_status(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_freq(char *args) {
+static void cmd_lora_freq(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_freq <Hz>\r\n");
         return;
     }
 
     uint32_t freq = (uint32_t)atoi(args);
-    if (freq < 137000000 || freq > 1020000000) {
+    if(freq < 137000000 || freq > 1020000000) {
         shell_reply("Error: Frequency must be 137-1020 MHz\r\n");
         return;
     }
@@ -159,18 +162,20 @@ static void cmd_lora_freq(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_sf(char *args) {
+static void cmd_lora_sf(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_sf <7-12>\r\n");
         return;
     }
 
     int sf = atoi(args);
-    if (sf < 7 || sf > 12) {
+    if(sf < 7 || sf > 12) {
         shell_reply("Error: Spreading factor must be 7-12\r\n");
         return;
     }
@@ -184,12 +189,14 @@ static void cmd_lora_sf(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_bw(char *args) {
+static void cmd_lora_bw(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_bw <125|250|500>\r\n");
         return;
     }
@@ -197,19 +204,19 @@ static void cmd_lora_bw(char *args) {
     int bw = atoi(args);
     uint8_t bw_enum;
 
-    switch (bw) {
-        case 125:
-            bw_enum = BW_125_KHZ;
-            break;
-        case 250:
-            bw_enum = BW_250_KHZ;
-            break;
-        case 500:
-            bw_enum = BW_500_KHZ;
-            break;
-        default:
-            shell_reply("Error: Bandwidth must be 125, 250, or 500 kHz\r\n");
-            return;
+    switch(bw) {
+    case 125:
+        bw_enum = BW_125_KHZ;
+        break;
+    case 250:
+        bw_enum = BW_250_KHZ;
+        break;
+    case 500:
+        bw_enum = BW_500_KHZ;
+        break;
+    default:
+        shell_reply("Error: Bandwidth must be 125, 250, or 500 kHz\r\n");
+        return;
     }
 
     catsniffer.lora_config.bandwidth = bw_enum;
@@ -220,12 +227,14 @@ static void cmd_lora_bw(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_cr(char *args) {
+static void cmd_lora_cr(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_cr <5|6|7|8>\r\n");
         return;
     }
@@ -233,22 +242,22 @@ static void cmd_lora_cr(char *args) {
     int cr = atoi(args);
     uint8_t cr_enum;
 
-    switch (cr) {
-        case 5:
-            cr_enum = CR_4_5;
-            break;
-        case 6:
-            cr_enum = CR_4_6;
-            break;
-        case 7:
-            cr_enum = CR_4_7;
-            break;
-        case 8:
-            cr_enum = CR_4_8;
-            break;
-        default:
-            shell_reply("Error: Coding rate must be 5, 6, 7, or 8 (for 4/5, 4/6, 4/7, 4/8)\r\n");
-            return;
+    switch(cr) {
+    case 5:
+        cr_enum = CR_4_5;
+        break;
+    case 6:
+        cr_enum = CR_4_6;
+        break;
+    case 7:
+        cr_enum = CR_4_7;
+        break;
+    case 8:
+        cr_enum = CR_4_8;
+        break;
+    default:
+        shell_reply("Error: Coding rate must be 5, 6, 7, or 8 (for 4/5, 4/6, 4/7, 4/8)\r\n");
+        return;
     }
 
     catsniffer.lora_config.coding_rate = cr_enum;
@@ -259,18 +268,20 @@ static void cmd_lora_cr(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_power(char *args) {
+static void cmd_lora_power(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_power <-9 to 22>\r\n");
         return;
     }
 
     int power = atoi(args);
-    if (power < -9 || power > 22) {
+    if(power < -9 || power > 22) {
         shell_reply("Error: TX power must be -9 to 22 dBm\r\n");
         return;
     }
@@ -283,21 +294,23 @@ static void cmd_lora_power(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_mode(char *args) {
+static void cmd_lora_mode(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_mode <stream|command>\r\n");
         return;
     }
 
-    if (strncmp(args, "stream", 6) == 0) {
+    if(strncmp(args, "stream", 6) == 0) {
         catsniffer.lora_mode = LORA_MODE_STREAM;
         catsniffer.led_interval = 1000; // Slow blink for stream mode
         shell_reply("LoRa mode set to STREAM (slow blink)\r\n");
-    } else if (strncmp(args, "command", 7) == 0) {
+    } else if(strncmp(args, "command", 7) == 0) {
         catsniffer.lora_mode = LORA_MODE_COMMAND;
         catsniffer.led_interval = 200; // Fast blink for command mode
         shell_reply("LoRa mode set to COMMAND (fast blink)\r\n");
@@ -306,18 +319,20 @@ static void cmd_lora_mode(char *args) {
     }
 }
 
-static void cmd_lora_preamble(char *args) {
+static void cmd_lora_preamble(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_preamble <6-65535>\r\n");
         return;
     }
 
     int preamble = atoi(args);
-    if (preamble < 6 || preamble > 65535) {
+    if(preamble < 6 || preamble > 65535) {
         shell_reply("Error: Preamble length must be 6-65535\r\n");
         return;
     }
@@ -330,21 +345,23 @@ static void cmd_lora_preamble(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_syncword(char *args) {
+static void cmd_lora_syncword(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_syncword <private|public>\r\n");
         return;
     }
 
-    if (strncmp(args, "private", 7) == 0) {
+    if(strncmp(args, "private", 7) == 0) {
         catsniffer.lora_config.public_network = false;
         catsniffer.lora_config.config_pending = true;
         shell_reply("Sync word set to PRIVATE (0x12) (pending)\r\n");
-    } else if (strncmp(args, "public", 6) == 0) {
+    } else if(strncmp(args, "public", 6) == 0) {
         catsniffer.lora_config.public_network = true;
         catsniffer.lora_config.config_pending = true;
         shell_reply("Sync word set to PUBLIC (0x34) (pending)\r\n");
@@ -353,21 +370,23 @@ static void cmd_lora_syncword(char *args) {
     }
 }
 
-static void cmd_lora_iq(char *args) {
+static void cmd_lora_iq(char* args) {
     // Skip command name to get argument
-    while (*args && *args != ' ') args++;
-    while (*args == ' ') args++;
+    while(*args && *args != ' ')
+        args++;
+    while(*args == ' ')
+        args++;
 
-    if (*args == '\0') {
+    if(*args == '\0') {
         shell_reply("Usage: lora_iq <normal|inverted>\r\n");
         return;
     }
 
-    if (strncmp(args, "normal", 6) == 0) {
+    if(strncmp(args, "normal", 6) == 0) {
         catsniffer.lora_config.iq_inverted = false;
         catsniffer.lora_config.config_pending = true;
         shell_reply("IQ set to NORMAL (pending)\r\n");
-    } else if (strncmp(args, "inverted", 8) == 0) {
+    } else if(strncmp(args, "inverted", 8) == 0) {
         catsniffer.lora_config.iq_inverted = true;
         catsniffer.lora_config.config_pending = true;
         shell_reply("IQ set to INVERTED (pending)\r\n");
@@ -376,14 +395,17 @@ static void cmd_lora_iq(char *args) {
     }
 }
 
-static void cmd_lora_config(char *args) {
+static void cmd_lora_config(char* args) {
     char buf[512];
-    const char *mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ? "Stream" : "Command";
-    const char *pending_str = catsniffer.lora_config.config_pending ? " (pending apply)" : "";
-    const char *iq_str = catsniffer.lora_config.iq_inverted ? "Inverted" : "Normal";
-    const char *syncword_str = catsniffer.lora_config.public_network ? "Public (0x34)" : "Private (0x12)";
+    const char* mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ? "Stream" : "Command";
+    const char* pending_str = catsniffer.lora_config.config_pending ? " (pending apply)" : "";
+    const char* iq_str = catsniffer.lora_config.iq_inverted ? "Inverted" : "Normal";
+    const char* syncword_str = catsniffer.lora_config.public_network ? "Public (0x34)" :
+                                                                       "Private (0x12)";
 
-    snprintf(buf, sizeof(buf),
+    snprintf(
+        buf,
+        sizeof(buf),
         "LoRa Configuration:%s\r\n"
         "  Frequency: %u Hz\r\n"
         "  Spreading Factor: SF%d\r\n"
@@ -398,10 +420,12 @@ static void cmd_lora_config(char *args) {
         catsniffer.lora_config.frequency,
         catsniffer.lora_config.spreading_factor,
         (catsniffer.lora_config.bandwidth == BW_125_KHZ) ? "125" :
-        (catsniffer.lora_config.bandwidth == BW_250_KHZ) ? "250" : "500",
+        (catsniffer.lora_config.bandwidth == BW_250_KHZ) ? "250" :
+                                                           "500",
         (catsniffer.lora_config.coding_rate == CR_4_5) ? 5 :
         (catsniffer.lora_config.coding_rate == CR_4_6) ? 6 :
-        (catsniffer.lora_config.coding_rate == CR_4_7) ? 7 : 8,
+        (catsniffer.lora_config.coding_rate == CR_4_7) ? 7 :
+                                                         8,
         catsniffer.lora_config.tx_power,
         catsniffer.lora_config.preamble_len,
         iq_str,
@@ -410,14 +434,14 @@ static void cmd_lora_config(char *args) {
     shell_reply(buf);
 }
 
-static void cmd_lora_apply(char *args) {
-    if (!catsniffer.lora_config.config_pending) {
+static void cmd_lora_apply(char* args) {
+    if(!catsniffer.lora_config.config_pending) {
         shell_reply("No pending configuration changes\r\n");
         return;
     }
 
     int ret = apply_lora_config();
-    if (ret < 0) {
+    if(ret < 0) {
         char buf[64];
         snprintf(buf, sizeof(buf), "Error applying configuration: %d\r\n", ret);
         shell_reply(buf);
@@ -428,23 +452,23 @@ static void cmd_lora_apply(char *args) {
 }
 
 // Main command processor
-void process_command(char *cmd, size_t len) {
-    if (len == 0) return;
-    
-    for (const shell_cmd_t *entry = commands; entry->name != NULL; entry++) {
-        if (entry->prefix_match) {
+void process_command(char* cmd, size_t len) {
+    if(len == 0) return;
+
+    for(const shell_cmd_t* entry = commands; entry->name != NULL; entry++) {
+        if(entry->prefix_match) {
             size_t name_len = strlen(entry->name);
-            if (strncmp(cmd, entry->name, name_len) == 0) {
+            if(strncmp(cmd, entry->name, name_len) == 0) {
                 entry->handler(cmd);
                 return;
             }
         } else {
-            if (strcmp(cmd, entry->name) == 0) {
+            if(strcmp(cmd, entry->name) == 0) {
                 entry->handler(cmd);
                 return;
             }
         }
     }
-    
+
     shell_reply("Unknown command. Type 'help'\r\n");
 }

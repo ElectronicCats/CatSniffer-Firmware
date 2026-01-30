@@ -10,7 +10,7 @@
 // The GAP profile role
 uint8_t profileRole = GAP_PROFILE_CENTRAL;
 // GAP GATT Service (GGS) parameters
-uint8_t attDeviceName[GAP_DEVICE_NAME_LEN]= "JustWorks Scanner";
+uint8_t attDeviceName[GAP_DEVICE_NAME_LEN] = "JustWorks Scanner";
 
 uint8_t pRandomAddress[B_ADDR_LEN] = {0};
 
@@ -19,42 +19,42 @@ uint8_t pRandomAddress[B_ADDR_LEN] = {0};
  */
 
 gapBondParams_t gapBondParams = {
-    .pairMode             = GAPBOND_PAIRING_MODE_INITIATE,
-    .mitm                 = true,
-    .ioCap                = GAPBOND_IO_CAP_DISPLAY_ONLY,
-    .bonding              = true,
-    .secureConnection     = GAPBOND_SECURE_CONNECTION_ALLOW,
-    .authenPairingOnly    = false,
-    .autoSyncWL           = false,
-    .eccReGenPolicy       = 0,
-    .KeySize              = 16,
-    .removeLRUBond        = false,
-    .KeyDistList          = GAPBOND_KEYDIST_MENCKEY | GAPBOND_KEYDIST_MIDKEY | GAPBOND_KEYDIST_MSIGN | GAPBOND_KEYDIST_SENCKEY | GAPBOND_KEYDIST_SIDKEY | GAPBOND_KEYDIST_SSIGN,
-    .eccDebugKeys         = false,
+    .pairMode = GAPBOND_PAIRING_MODE_INITIATE,
+    .mitm = true,
+    .ioCap = GAPBOND_IO_CAP_DISPLAY_ONLY,
+    .bonding = true,
+    .secureConnection = GAPBOND_SECURE_CONNECTION_ALLOW,
+    .authenPairingOnly = false,
+    .autoSyncWL = false,
+    .eccReGenPolicy = 0,
+    .KeySize = 16,
+    .removeLRUBond = false,
+    .KeyDistList = GAPBOND_KEYDIST_MENCKEY | GAPBOND_KEYDIST_MIDKEY | GAPBOND_KEYDIST_MSIGN |
+                   GAPBOND_KEYDIST_SENCKEY | GAPBOND_KEYDIST_SIDKEY | GAPBOND_KEYDIST_SSIGN,
+    .eccDebugKeys = false,
     .eraseBondWhileInConn = false,
-    .bondFailAction       = GAPBOND_FAIL_TERMINATE_ERASE_SINGLE_BOND,
-    .sameIrkAction        = GAPBOND_SAME_IRK_UPDATE_BOND_REC
-};
+    .bondFailAction = GAPBOND_FAIL_TERMINATE_ERASE_SINGLE_BOND,
+    .sameIrkAction = GAPBOND_SAME_IRK_UPDATE_BOND_REC};
 
-uint8_t pairMode                =    GAPBOND_PAIRING_MODE_INITIATE;
-uint8_t mitm                    =    true;
-uint8_t ioCap                   =    GAPBOND_IO_CAP_DISPLAY_ONLY;
-uint8_t bonding                 =    true;
-uint8_t secureConnection        =    GAPBOND_SECURE_CONNECTION_ALLOW;
-uint8_t authenPairingOnly       =    false;
-uint8_t autoSyncWL              =    false;
-uint8_t eccReGenPolicy          =    0;
-uint8_t KeySize                 =    16;
-uint8_t removeLRUBond           =    false;
-uint8_t bondFailAction          =    GAPBOND_FAIL_TERMINATE_ERASE_SINGLE_BOND;
-uint8_t KeyDistList             =    GAPBOND_KEYDIST_MENCKEY | GAPBOND_KEYDIST_MIDKEY | GAPBOND_KEYDIST_MSIGN | GAPBOND_KEYDIST_SENCKEY | GAPBOND_KEYDIST_SIDKEY | GAPBOND_KEYDIST_SSIGN;
-uint8_t eccDebugKeys            =    false;
-uint8_t allowDebugKeys          =    true;
-uint8_t eraseBondWhileInConn    =    false;
-uint8_t sameIrkAction           =    GAPBOND_SAME_IRK_UPDATE_BOND_REC;
+uint8_t pairMode = GAPBOND_PAIRING_MODE_INITIATE;
+uint8_t mitm = true;
+uint8_t ioCap = GAPBOND_IO_CAP_DISPLAY_ONLY;
+uint8_t bonding = true;
+uint8_t secureConnection = GAPBOND_SECURE_CONNECTION_ALLOW;
+uint8_t authenPairingOnly = false;
+uint8_t autoSyncWL = false;
+uint8_t eccReGenPolicy = 0;
+uint8_t KeySize = 16;
+uint8_t removeLRUBond = false;
+uint8_t bondFailAction = GAPBOND_FAIL_TERMINATE_ERASE_SINGLE_BOND;
+uint8_t KeyDistList = GAPBOND_KEYDIST_MENCKEY | GAPBOND_KEYDIST_MIDKEY | GAPBOND_KEYDIST_MSIGN |
+                      GAPBOND_KEYDIST_SENCKEY | GAPBOND_KEYDIST_SIDKEY | GAPBOND_KEYDIST_SSIGN;
+uint8_t eccDebugKeys = false;
+uint8_t allowDebugKeys = true;
+uint8_t eraseBondWhileInConn = false;
+uint8_t sameIrkAction = GAPBOND_SAME_IRK_UPDATE_BOND_REC;
 
-void setBondManagerParameters()
-{
+void setBondManagerParameters() {
     GAPBondMgr_SetParameter(GAPBOND_PAIRING_MODE, sizeof(uint8_t), &pairMode);
     GAPBondMgr_SetParameter(GAPBOND_MITM_PROTECTION, sizeof(uint8_t), &mitm);
     GAPBondMgr_SetParameter(GAPBOND_IO_CAPABILITIES, sizeof(uint8_t), &ioCap);
@@ -77,4 +77,3 @@ void setBondManagerParameters()
     GAPBondMgr_SetParameter(GAPBOND_ERASE_BOND_IN_CONN, sizeof(uint8_t), &eraseBondWhileInConn);
     GAPBondMgr_SetParameter(GAPBOND_SAME_IRK_OPTION, sizeof(uint8_t), &sameIrkAction);
 }
-

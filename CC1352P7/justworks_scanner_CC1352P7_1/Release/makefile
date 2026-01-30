@@ -2,8 +2,8 @@
 # Automatically-generated file. Do not edit!
 ################################################################################
 
-GEN_OPTS__FLAG := 
-GEN_CMDS__FLAG := 
+GEN_OPTS__FLAG :=
+GEN_CMDS__FLAG :=
 
 ORDERED_OBJS += \
 $(GEN_CMDS__FLAG) \
@@ -12,8 +12,8 @@ libc.a \
 
 -include ../makefile.init
 
-RM := 
-RMDIR := 
+RM :=
+RMDIR :=
 
 # All of the sources participating in the build are defined here
 -include sources.mk
@@ -23,7 +23,7 @@ RMDIR :=
 
 -include ../makefile.defs
 
-# Add inputs and outputs from these tool invocations to the build variables 
+# Add inputs and outputs from these tool invocations to the build variables
 
 # All Target
 all: justworks_scanner_CC1352P7_1.out
@@ -52,4 +52,3 @@ post-build:
 .SECONDARY:
 
 -include ../makefile.targets
-

@@ -41,4 +41,3 @@
 
 /* libraries required for /ti/sysbios */
 -l"ti/sysbios/lib/ticlang/m4f/sysbios.a"
-

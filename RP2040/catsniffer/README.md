@@ -77,7 +77,7 @@ Multi-protocol wireless sniffer and LoRa communication device based on RP2040, C
 
 ---
 
-## TO-DO 
+## TO-DO
 
 - **LoRa Stream only**: Configure the Board to just transmit as fast as possible since going from RX to TX is taking a 5mS delay.
 - **Access to modify Preamble**: for meshtastic we use an specific preamble, this cannot be modified on runtime.
@@ -86,7 +86,7 @@ Multi-protocol wireless sniffer and LoRa communication device based on RP2040, C
 - **Add identification command**: Command to identify different boards on a PC, blink LEDs in a beauty way.
 - **Add support to save CC1352 images**: Save CC1352 different firmwares on the sam flash memmory.
 - **Add automated testings with 2 boards**: Fully automate testings adding the CC1352 programming
-- **Add CC1352 serial programmer**: Add the programing functionallity to reprogram the CC1352 on-the-go 
+- **Add CC1352 serial programmer**: Add the programing functionallity to reprogram the CC1352 on-the-go
 
 ## Quick Start
 

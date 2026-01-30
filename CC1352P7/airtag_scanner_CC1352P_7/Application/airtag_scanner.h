@@ -9,7 +9,7 @@
  Target Device: cc13xx_cc26xx
 
  ******************************************************************************
- 
+
  Copyright (c) 2013-2023, Texas Instruments Incorporated
  All rights reserved.
 
@@ -41,16 +41,15 @@
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
  ******************************************************************************
- 
- 
+
+
  *****************************************************************************/
 
 #ifndef AirtagScanner_H
 #define AirtagScanner_H
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 /*********************************************************************
@@ -69,7 +68,7 @@ extern "C"
 // Note: this value cannot be greater than the number of items reserved in
 // scMenuConnect (See airtag_scanner_menu.c)
 // This cannot exceed 27 (two-button menu's constraint)
-#define DEFAULT_MAX_SCAN_RES                 8
+#define DEFAULT_MAX_SCAN_RES 8
 #include "gap_scanner.h"
 /*********************************************************************
  * MACROS
@@ -126,7 +125,7 @@ bool AirtagScanner_doSetConnPhy(uint8_t index);
 /* Action for Menu: Disconnect */
 bool AirtagScanner_doDisconnect(uint8_t index);
 
-void Util_converData2Str(uint8_t *pData, uint8_t length);
+void Util_converData2Str(uint8_t* pData, uint8_t length);
 
 /*********************************************************************
 *********************************************************************/
