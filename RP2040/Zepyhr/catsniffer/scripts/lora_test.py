@@ -135,6 +135,7 @@ class LoRaTester:
             self.send_shell_command(shell, f"lora_bw {bw}")
             self.send_shell_command(shell, f"lora_cr {cr}")
             self.send_shell_command(shell, f"lora_power {power}")
+            self.send_shell_command(shell, f"band3")
 
             # Apply configuration
             response = self.send_shell_command(shell, "lora_apply", timeout=2)
