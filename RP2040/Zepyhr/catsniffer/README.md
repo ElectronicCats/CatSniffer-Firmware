@@ -10,6 +10,7 @@ Multi-protocol wireless sniffer and LoRa communication device based on RP2040, C
 
 - [Features](#features)
 - [Hardware](#hardware)
+- [To-Do](#to-do)
 - [Quick Start](#quick-start)
 - [USB Endpoints](#usb-endpoints)
 - [Command Reference](#command-reference)
@@ -75,6 +76,17 @@ Multi-protocol wireless sniffer and LoRa communication device based on RP2040, C
 - **3 paths**: 2.4GHz, Sub-GHz, LoRa
 
 ---
+
+## TO-DO 
+
+- **LoRa Stream only**: Configure the Board to just transmit as fast as possible since going from RX to TX is taking a 5mS delay.
+- **Access to modify Preamble**: for meshtastic we use an specific preamble, this cannot be modified on runtime.
+- **Access to FSK on SX1262**: Right now we are using the Zephyr original driver, this limits us to the use of different modulations, but the capabilities are there.
+- **Check Firmware ID**: Add a register on shell termianl, of the latest firmware flashed to the CC1352.
+- **Add identification command**: Command to identify different boards on a PC, blink LEDs in a beauty way.
+- **Add support to save CC1352 images**: Save CC1352 different firmwares on the sam flash memmory.
+- **Add automated testings with 2 boards**: Fully automate testings adding the CC1352 programming
+- **Add CC1352 serial programmer**: Add the programing functionallity to reprogram the CC1352 on-the-go 
 
 ## Quick Start
 
@@ -661,6 +673,6 @@ Check with Electronic Cats for licensing information.
 
 ---
 
-**Version**: 0.1.0
+**Version**: 0.2.0
 **Last Updated**: January 2026
 **Maintainer**: Electronic Cats
