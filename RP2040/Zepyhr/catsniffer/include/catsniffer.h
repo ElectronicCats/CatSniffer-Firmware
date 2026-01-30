@@ -66,6 +66,8 @@ typedef struct {
     uint8_t coding_rate;        // CR_4_5, CR_4_6, CR_4_7, CR_4_8 (default: CR_4_5)
     int8_t tx_power;            // -9 to 22 dBm (default: 20)
     uint16_t preamble_len;      // Default: 12
+    bool iq_inverted;           // IQ inversion (default: false/normal)
+    bool public_network;        // Sync word: false=private (0x12), true=public (0x34)
     bool config_pending;        // true if changes not yet applied
 } lora_config_t;
 
