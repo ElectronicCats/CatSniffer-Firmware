@@ -84,6 +84,7 @@ typedef struct {
     uint8_t lora_mode;           // LORA_MODE_STREAM or LORA_MODE_COMMAND
     lora_config_t lora_config;   // Current LoRa configuration
     bool lora_initialized;       // Track initialization state
+    bool lora_config_lock;       // Lock flag to pause LoRa operations during reconfiguration
 } catsniffer_t;
 
 // Global catsniffer instance
