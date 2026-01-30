@@ -91,6 +91,31 @@ static inline uint32_t safe_ring_buf_get(struct ring_buf *rb, uint8_t *data, uin
     return result;
 }
 
+void lora_rx_cb(const struct device *dev, uint8_t *data, uint16_t size, 
+                        int16_t rssi, int8_t snr, void *user_data)
+{
+    ARG_UNUSED(dev);
+	ARG_UNUSED(user_data);
+
+    char rx_msg[384];
+
+    // Create hex string of the data
+    char data_str[128] = {0};
+    int display_len = (size > 40) ? 40 : size;
+
+    for(int i=0; i<display_len; i++) {
+        char byte_str[4];
+        snprintf(byte_str, sizeof(byte_str), "%02X", data[i]);
+        strcat(data_str, byte_str);
+    }
+    if (size > 40) strcat(data_str, "...");
+
+    snprintf(rx_msg, sizeof(rx_msg), "RX: %s | RSSI: %d | SNR: %d\r\n", data_str, rssi, snr);
+    safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)rx_msg, strlen(rx_msg));
+    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+
+}
+
 // USB message callback
 static void catsniffer_usb_msg_cb(struct usbd_context *const ctx, const struct usbd_msg *msg)
 {
@@ -326,6 +351,12 @@ void set_status_leds(int l0, int l1, int l2) {
     gpio_pin_set_dt(&led2, l2);
 }
 
+// Forward declarations
+static const char* get_error_string(int error);
+static int lora_set_tx_mode(void);
+static void lora_stop_rx(void);
+static int lora_start_rx_async(void);
+
 int initialize_lora(void)
 {
     const char *status_msg;
@@ -360,7 +391,9 @@ int initialize_lora(void)
     config.preamble_len = catsniffer.lora_config.preamble_len;
     config.coding_rate = catsniffer.lora_config.coding_rate;
     config.tx_power = catsniffer.lora_config.tx_power;
-    config.tx = true;
+    config.tx = false;  // Start in RX mode to enable receiving
+    config.iq_inverted = false;
+    config.public_network = false;
 
     int ret = lora_config(lora_dev, &config);
     if (ret < 0) {
@@ -369,9 +402,10 @@ int initialize_lora(void)
         if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return ret;
     }
-    
+
     catsniffer.lora_initialized = true;
-    status_msg = "LoRa: Initialization completed!\r\n";
+    catsniffer.lora_config_lock = false;
+    status_msg = "LoRa: Initialization completed (RX mode)!\r\n";
     safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
     if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 
@@ -389,6 +423,13 @@ int apply_lora_config(void)
         return -ENODEV;
     }
 
+    // Lock to prevent LoRa thread from interfering
+    catsniffer.lora_config_lock = true;
+    k_msleep(50);  // Wait for any ongoing operation to complete
+    
+    // Free radio from Rx
+    lora_recv_async(lora_dev, NULL, NULL);
+
     status_msg = "Applying LoRa configuration...\r\n";
     safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
     if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
@@ -400,24 +441,32 @@ int apply_lora_config(void)
     config.preamble_len = catsniffer.lora_config.preamble_len;
     config.coding_rate = catsniffer.lora_config.coding_rate;
     config.tx_power = catsniffer.lora_config.tx_power;
-    config.tx = true;
+    config.tx = false;  // Configure for RX mode
+    config.iq_inverted = false;
+    config.public_network = false;
 
     int ret = lora_config(lora_dev, &config);
+
+    // Unlock regardless of result
+    catsniffer.lora_config_lock = false;
+
     if (ret < 0) {
-        status_msg = "ERROR: LoRa configuration failed\r\n";
-        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
+        char err_buf[96];
+        snprintf(err_buf, sizeof(err_buf), "ERROR: LoRa configuration failed (%d: %s)\r\n",
+                 ret, get_error_string(ret));
+        safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)err_buf, strlen(err_buf));
         if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
         return ret;
     }
 
-    status_msg = "LoRa configuration applied successfully\r\n";
+    status_msg = "LoRa configuration applied successfully (RX mode)\r\n";
     safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
     if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 
     return 0;
 }
 
-const char* get_error_string(int error) {
+static const char* get_error_string(int error) {
     switch(error) {
         case 0: return "Success";
         case -EAGAIN: return "EAGAIN - Resource temporarily unavailable"; 
@@ -462,7 +511,12 @@ void process_lora_command(char *cmd_line)
         safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)status_msg, strlen(status_msg));
         if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 
+        // Switch to TX mode, send, then back to RX mode
+        lora_stop_rx();
+        lora_set_tx_mode();
         int ret = lora_send(lora_dev, tx_data, sizeof(tx_data));
+        lora_start_rx_async();
+
         snprintf(response, sizeof(response), "TX Result: %d (%s)\r\n", ret, get_error_string(ret));
         safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
         if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
@@ -507,9 +561,12 @@ void process_lora_command(char *cmd_line)
             snprintf(response, sizeof(response), "DEBUG: Sending bytes %s\r\n", debug_hex);
             safe_ring_buf_put(&rb_config_to_usb, (uint8_t*)response, strlen(response));
             if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
-            
-            // Try to send
+
+            // Switch to TX mode, send, then back to RX mode
+            lora_set_tx_mode();
             int ret = lora_send(lora_dev, tx_data, data_len);
+            lora_start_rx_async();
+
             snprintf(response, sizeof(response), "TX Result: %d (%s)\r\n", ret, get_error_string(ret));
             
         } else {
@@ -527,6 +584,54 @@ void process_lora_command(char *cmd_line)
     if (cdc2_dev) uart_irq_tx_enable(cdc2_dev);
 }
 
+// Detiene explícitamente la recepción asíncrona
+static void lora_stop_rx(void)
+{
+    // Pasar NULL y NULL cancela la recepción asíncrona en Zephyr
+    lora_recv_async(lora_dev, NULL, NULL);
+    
+    // IMPORTANTE: Dar un pequeño respiro al bus SPI/Driver para cambiar de estado
+    k_sleep(K_MSEC(5)); 
+}
+
+// Helper function to configure LoRa for TX
+static int lora_set_tx_mode(void)
+{
+    struct lora_modem_config config;
+    config.frequency = catsniffer.lora_config.frequency;
+    config.bandwidth = catsniffer.lora_config.bandwidth;
+    config.datarate = catsniffer.lora_config.spreading_factor;
+    config.preamble_len = catsniffer.lora_config.preamble_len;
+    config.coding_rate = catsniffer.lora_config.coding_rate;
+    config.tx_power = catsniffer.lora_config.tx_power;
+    config.tx = true;
+    config.iq_inverted = false;
+    config.public_network = false;
+    return lora_config(lora_dev, &config);
+}
+
+// Helper function to configure LoRa for RX
+static int lora_start_rx_async(void)
+{
+    struct lora_modem_config config;
+    config.frequency = catsniffer.lora_config.frequency;
+    config.bandwidth = catsniffer.lora_config.bandwidth;
+    config.datarate = catsniffer.lora_config.spreading_factor;
+    config.preamble_len = catsniffer.lora_config.preamble_len;
+    config.coding_rate = catsniffer.lora_config.coding_rate;
+    config.tx_power = catsniffer.lora_config.tx_power;
+    config.tx = false; // <--- RX Mode
+    config.iq_inverted = false;
+    config.public_network = false;
+
+    // 1. Aplicar configuración física primero
+    int ret = lora_config(lora_dev, &config);
+    if (ret < 0) return ret;
+
+    // 2. Iniciar la escucha asíncrona
+    return lora_recv_async(lora_dev, lora_rx_cb, NULL);
+}
+
 // LoRa thread function
 static void lora_thread_func(void *p1, void *p2, void *p3)
 {
@@ -534,6 +639,14 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
     size_t cmd_len = 0;
 
     while (1) {
+        // Skip operations if config lock is active
+        if (catsniffer.lora_config_lock) {
+            k_msleep(10);
+            continue;
+        }
+
+        // Start async rx
+        lora_start_rx_async();
         if (catsniffer.lora_mode == LORA_MODE_COMMAND) {
             // COMMAND MODE: Line-buffered text commands
             uint8_t usb_buf[64];
@@ -555,30 +668,8 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
                 }
             } else {
                 // No command pending, try to receive
-                if (catsniffer.lora_initialized) {
-                    uint8_t rx_data[255];
-                    int16_t rssi;
-                    int8_t snr;
-
-                    int ret = lora_recv(lora_dev, rx_data, sizeof(rx_data), K_NO_WAIT, &rssi, &snr);
-                    if (ret > 0) {
-                        char rx_msg[384];
-
-                        // Create hex string of the data
-                        char data_str[128] = {0};
-                        int display_len = (ret > 40) ? 40 : ret;
-
-                        for(int i=0; i<display_len; i++) {
-                            char byte_str[4];
-                            snprintf(byte_str, sizeof(byte_str), "%02X", rx_data[i]);
-                            strcat(data_str, byte_str);
-                        }
-                        if (ret > 40) strcat(data_str, "...");
-
-                        snprintf(rx_msg, sizeof(rx_msg), "RX: %s | RSSI: %d | SNR: %d\r\n", data_str, rssi, snr);
-                        safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t*)rx_msg, strlen(rx_msg));
-                        if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
-                    }
+                if (catsniffer.lora_initialized && !catsniffer.lora_config_lock) {
+                    //int ret = lora_recv(lora_dev, rx_data, sizeof(rx_data), K_NO_WAIT, &rssi, &snr);
                 }
             }
         } else {
@@ -586,31 +677,33 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
             uint8_t tx_buffer[255];
             int tx_len = safe_ring_buf_get(&rb_usb_to_sx1262, tx_buffer, sizeof(tx_buffer));
 
-            if (tx_len > 0) {
-                // Send raw bytes directly
-                if (catsniffer.lora_initialized) {
-                    lora_send(lora_dev, tx_buffer, tx_len);
-                }
+            if (tx_len > 0 && catsniffer.lora_initialized && !catsniffer.lora_config_lock) {
+                // Stop any Rx
+                lora_stop_rx();
+                // Switch to TX mode, send, then switch back to RX mode
+                lora_set_tx_mode();
+                lora_send(lora_dev, tx_buffer, tx_len);
+                lora_start_rx_async();  // Back to RX mode
             }
 
             // Always poll for RX in stream mode
-            if (catsniffer.lora_initialized) {
-                uint8_t rx_data[255];
-                int16_t rssi;
-                int8_t snr;
+            if (catsniffer.lora_initialized && !catsniffer.lora_config_lock) {
+                // uint8_t rx_data[255];
+                // int16_t rssi;
+                // int8_t snr;
 
-                int ret = lora_recv(lora_dev, rx_data, sizeof(rx_data), K_NO_WAIT, &rssi, &snr);
-                if (ret > 0) {
-                    // Pack data in binary format: [length][payload][rssi_offset][snr_offset]
-                    uint8_t packed[258]; // 1 + 255 + 1 + 1
-                    packed[0] = (uint8_t)ret;                      // Payload length
-                    memcpy(&packed[1], rx_data, ret);              // Payload
-                    packed[1 + ret] = (uint8_t)(rssi + 128);       // RSSI with offset
-                    packed[1 + ret + 1] = (uint8_t)(snr + 128);    // SNR with offset
+                // int ret = lora_recv(lora_dev, rx_data, sizeof(rx_data), K_NO_WAIT, &rssi, &snr);
+                // if (ret > 0) {
+                //     // Pack data in binary format: [length][payload][rssi_offset][snr_offset]
+                //     uint8_t packed[258]; // 1 + 255 + 1 + 1
+                //     packed[0] = (uint8_t)ret;                      // Payload length
+                //     memcpy(&packed[1], rx_data, ret);              // Payload
+                //     packed[1 + ret] = (uint8_t)(rssi + 128);       // RSSI with offset
+                //     packed[1 + ret + 1] = (uint8_t)(snr + 128);    // SNR with offset
 
-                    safe_ring_buf_put(&rb_sx1262_to_usb, packed, ret + 3);
-                    if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
-                }
+                //     safe_ring_buf_put(&rb_sx1262_to_usb, packed, ret + 3);
+                //     if (cdc1_dev) uart_irq_tx_enable(cdc1_dev);
+                // }
             }
         }
 
@@ -670,6 +763,7 @@ int main(void)
     catsniffer.lora_config.preamble_len = 12;
     catsniffer.lora_config.config_pending = false;
     catsniffer.lora_initialized = false;
+    catsniffer.lora_config_lock = false;
 
     // Timeout for boot pin - don't hang forever
     int timeout = 0;
