@@ -32,8 +32,6 @@ The CC1352P can be programmed via Serial using the [tool cc2538](https://github.
 
 ![v3.x Block Diagram](https://github.com/ElectronicCats/CatSniffer/assets/139595394/9467331c-014f-48a6-9934-0a0b5fa63f27)
 
-
-
 ## CC1352P vs CC1352P7
 
 The CC1352 chip has inside two ARM® Cortex® processors:
