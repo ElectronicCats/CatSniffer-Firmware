@@ -1,0 +1,51 @@
+/ {
+    aliases {
+        lora0 = &sx1262;
+        led0 = &led_0;
+        led1 = &led_1;
+        led2 = &led_2;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led_0: led0 {
+            gpios = <&gpio0 27 GPIO_ACTIVE_HIGH>;
+        };
+        led_1: led1 {
+            gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+        };
+        led_2: led2 {
+            gpios = <&gpio0 28 GPIO_ACTIVE_HIGH>;
+        };
+    };
+};
+
+/* Enable and configure SPI for SX1262 */
+&spi0 {
+    status = "okay";
+    pinctrl-0 = <&spi0_default>;
+    pinctrl-names = "default";
+    cs-gpios = <&gpio0 17 GPIO_ACTIVE_LOW>;
+
+    sx1262: sx1262@0 {
+        compatible = "semtech,sx1262";
+        reg = <0>;
+        spi-max-frequency = <1000000>;
+
+        reset-gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+        busy-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+        dio1-gpios = <&gpio0 5 GPIO_ACTIVE_HIGH>;
+    };
+};
+
+&pinctrl {
+    spi0_default: spi0_default {
+        group1 {
+            pinmux = <SPI0_SCK_P18>, <SPI0_TX_P19>;
+        };
+        group2 {
+            pinmux = <SPI0_RX_P16>;
+            input-enable;
+        };
+    };
+};
