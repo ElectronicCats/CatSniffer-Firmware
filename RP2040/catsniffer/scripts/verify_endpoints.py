@@ -112,50 +112,82 @@ def get_usb_interfaces(dev):
     return interfaces
 
 def find_all_catsniffers():
-    """Find all connected CatSniffer devices and their ports."""
+    """Find all connected CatSniffer devices and their ports with cross-platform."""
     print(f"Searching for CatSniffers (VID:{CATSNIFFER_VID:04X} PID:{CATSNIFFER_PID:04X})...")
-
-    usb_devices = get_all_usb_devices()
-
-    if not usb_devices:
-        print("No CatSniffers found.")
-        return []
-
-    print(f"Found {len(usb_devices)} CatSniffer device(s)\n")
-
-    # Get all serial ports
+    
     all_ports = list(serial.tools.list_ports.comports())
-    cat_ports = sorted(
-        [p for p in all_ports if p.vid == CATSNIFFER_VID and p.pid == CATSNIFFER_PID],
-        key=lambda x: x.device
-    )
-
-    # Group ports by device (each CatSniffer has 3 consecutive ports)
+    cat_ports = [p for p in all_ports if p.vid == CATSNIFFER_VID and p.pid == CATSNIFFER_PID]
+    
+    if not cat_ports:
+        print("No CatSniffer ports found.")
+        return []
+    
+    print(f"\Found {len(cat_ports)} CatSniffer port(s)")
+    
+    # Sort consistently across systems
+    cat_ports.sort(key=lambda x: x.device)
+    
+    # Group by device using serial number
+    import re
+    devices = {}
+    
+    for port in cat_ports:
+        serial_num = "unknown"
+        if port.hwid:
+            match = re.search(r'SER=([A-Fa-f0-9]+)', port.hwid)
+            if match:
+                serial_num = match.group(1)
+            elif port.location:
+                serial_num = f"loc-{port.location}"
+        
+        if serial_num not in devices:
+            devices[serial_num] = []
+        devices[serial_num].append(port)
+    
     catsniffers = []
-
-    # Collect all interfaces from all devices
-    all_interfaces = []
-    for dev in usb_devices:
-        interfaces = get_usb_interfaces(dev)
-        cdc_ctrl_intfs = sorted([i for i in interfaces if i["class"] == 0x02],
-                               key=lambda x: x["number"])
-        all_interfaces.extend(cdc_ctrl_intfs)
-
-    # Match ports to interfaces (3 ports per device)
-    for device_idx in range(len(usb_devices)):
-        port_offset = device_idx * 3
-        if port_offset + 2 < len(cat_ports):
-            ports = {}
-            for i in range(3):
-                intf_idx = port_offset + i
-                port_idx = port_offset + i
-
-                if intf_idx < len(all_interfaces) and port_idx < len(cat_ports):
-                    intf_name = all_interfaces[intf_idx]["name"] or f"Interface-{i}"
-                    ports[intf_name] = cat_ports[port_idx].device
-
-            catsniffers.append(CatSnifferDevice(device_idx + 1, ports))
-
+    device_id = 1
+    
+    for serial_num, ports in devices.items():
+        if len(ports) < 3:
+            print(f"Warning: Device {serial_num} has only {len(ports)}/3 ports")
+            continue
+        
+        # Sort ports for this device
+        ports.sort(key=lambda x: x.device)
+        
+        # Intelligent mapping
+        ports_dict = {}
+        
+        # 1. By description (more reliable)
+        for port in ports:
+            desc = (port.description or "").lower()
+            if "shell" in desc:
+                ports_dict["Cat-Shell"] = port.device
+            elif "lora" in desc:
+                ports_dict["Cat-LoRa"] = port.device
+            elif "bridge" in desc:
+                ports_dict["Cat-Bridge"] = port.device
+        
+        # 2. By order (fallback)
+        if len(ports_dict) < 3:
+            fallback_map = {0: "Cat-Bridge", 1: "Cat-LoRa", 2: "Cat-Shell"}
+            for i, port in enumerate(ports[:3]):
+                name = fallback_map.get(i)
+                if name and name not in ports_dict:
+                    ports_dict[name] = port.device
+        
+        if len(ports_dict) == 3:
+            device = CatSnifferDevice(device_id, ports_dict)
+            catsniffers.append(device)
+            device_id += 1
+    
+    print(f"\nDetected {len(catsniffers)} CatSniffer device(s):")
+    for dev in catsniffers:
+        print(f"\nCatSniffer #{dev.device_id}:")
+        print(f"  Bridge: {dev.bridge_port}")
+        print(f"  LoRa:   {dev.lora_port}")
+        print(f"  Shell:  {dev.shell_port}")
+    
     return catsniffers
 
 def print_device_info(devices):
