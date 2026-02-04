@@ -95,6 +95,21 @@ done
 # Run verification
 echo ""
 echo "=== Running Verification ==="
+
+# Wait a bit for ports to stabilize
+sleep 5
+
+# Verify Shell port is responsive
+echo "Verifying Shell port is ready..."
+SHELL_PORT=$(ls $SERIAL_PATTERN 2>/dev/null | sort | tail -1)
+if [ -n "$SHELL_PORT" ]; then
+    # Send a newline and wait for prompt
+    for i in {1..5}; do
+        echo "" > "$SHELL_PORT" 2>/dev/null || true
+        sleep 1
+    done
+fi
+
 python3 "$SCRIPT_DIR/verify_endpoints.py"
 
 echo ""
