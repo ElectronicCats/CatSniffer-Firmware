@@ -114,23 +114,23 @@ def get_usb_interfaces(dev):
 def find_all_catsniffers():
     """Find all connected CatSniffer devices and their ports with cross-platform."""
     print(f"\033[92mSearching for CatSniffers (VID:{CATSNIFFER_VID:04X} PID:{CATSNIFFER_PID:04X})...\033[0m")
-    
+
     all_ports = list(serial.tools.list_ports.comports())
     cat_ports = [p for p in all_ports if p.vid == CATSNIFFER_VID and p.pid == CATSNIFFER_PID]
-    
+
     if not cat_ports:
         print("\033[91mNo CatSniffer ports found.\033[0m")
         return []
-    
+
     print(f"\033[96mFound {len(cat_ports)} CatSniffer port(s)\033[0m")
-    
+
     # Sort consistently across systems
     cat_ports.sort(key=lambda x: x.device)
-    
+
     # Group by device using serial number
     import re
     devices = {}
-    
+
     for port in cat_ports:
         serial_num = "unknown"
         if port.hwid:
@@ -139,25 +139,25 @@ def find_all_catsniffers():
                 serial_num = match.group(1)
             elif port.location:
                 serial_num = f"loc-{port.location}"
-        
+
         if serial_num not in devices:
             devices[serial_num] = []
         devices[serial_num].append(port)
-    
+
     catsniffers = []
     device_id = 1
-    
+
     for serial_num, ports in devices.items():
         if len(ports) < 3:
             print(f"\033[93mWarning: Device {serial_num} has only {len(ports)}/3 ports\033[0m")
             continue
-        
+
         # Sort ports for this device
         ports.sort(key=lambda x: x.device)
-        
+
         # Intelligent mapping
         ports_dict = {}
-        
+
         # 1. By description (more reliable)
         for port in ports:
             desc = (port.description or "").lower()
@@ -167,7 +167,7 @@ def find_all_catsniffers():
                 ports_dict["Cat-LoRa"] = port.device
             elif "bridge" in desc:
                 ports_dict["Cat-Bridge"] = port.device
-        
+
         # 2. By order (fallback)
         if len(ports_dict) < 3:
             fallback_map = {0: "Cat-Bridge", 1: "Cat-LoRa", 2: "Cat-Shell"}
@@ -175,19 +175,19 @@ def find_all_catsniffers():
                 name = fallback_map.get(i)
                 if name and name not in ports_dict:
                     ports_dict[name] = port.device
-        
+
         if len(ports_dict) == 3:
             device = CatSnifferDevice(device_id, ports_dict)
             catsniffers.append(device)
             device_id += 1
-    
+
     print(f"\n\033[32mDetected {len(catsniffers)} CatSniffer device(s):\033[0m")
     for dev in catsniffers:
         print(f"\n\033[97mCatSniffer #{dev.device_id}:\033[0m")
         print(f"  \033[36mBridge:\033[0m {dev.bridge_port}")
         print(f"  \033[36mLoRa:\033[0m   {dev.lora_port}")
         print(f"  \033[36mShell:\033[0m  {dev.shell_port}")
-    
+
     return catsniffers
 
 def print_device_info(devices):
@@ -381,40 +381,40 @@ def test_lora_communication(device):
             # Open both ports simultaneously
             shell_ser = serial.Serial(device.shell_port, 115200, timeout=0.5)
             lora_ser = serial.Serial(device.lora_port, 115200, timeout=0.5)
-            
+
             # Clear buffers
             shell_ser.reset_input_buffer()
             shell_ser.reset_output_buffer()
             lora_ser.reset_input_buffer()
             lora_ser.reset_output_buffer()
-            
+
             time.sleep(0.1)
-            
+
             # Send command to LoRa port
             cmd_bytes = (lora_cmd + "\r\n").encode('ascii')
             lora_ser.write(cmd_bytes)
             lora_ser.flush()
             print(f"\033[36m  Sent to LoRa: '{lora_cmd}'\033[0m")
             print(f"\033[90m  Bytes: {cmd_bytes.hex()}\033[0m")
-            
+
             # Wait and read response from Shell
             response = b""
             start_time = time.time()
-            
+
             while time.time() - start_time < timeout:
                 if shell_ser.in_waiting > 0:
                     chunk = shell_ser.read(shell_ser.in_waiting)
                     response += chunk
                     print(f"\033[90m  [Shell] Got {len(chunk)} bytes\033[0m")
                 time.sleep(0.1)
-            
+
             # Close ports
             lora_ser.close()
             shell_ser.close()
-            
+
             # Decode response
             response_str = response.decode('ascii', errors='ignore').strip()
-            
+
             if response_str:
                 print(f"\033[36m  Shell response: {response_str}\033[0m")
                 # Check if any expected keyword is in the response
@@ -425,7 +425,7 @@ def test_lora_communication(device):
             else:
                 print(f"\033[31m  No response from Shell\033[0m")
                 return False, ""
-                
+
         except Exception as e:
             print(f"\033[31m  ERROR: {e}\033[0m")
             return False, ""
@@ -479,7 +479,7 @@ def test_lora_communication(device):
         with serial.Serial(device.lora_port, 115200, timeout=1) as lora_ser:
             lora_ser.reset_input_buffer()
             time.sleep(0.5)
-            
+
             if lora_ser.in_waiting > 0:
                 data = lora_ser.read(lora_ser.in_waiting)
                 print(f"\033[32m  ✓ Data available on LoRa port: {data.hex()}\033[0m")
@@ -499,7 +499,7 @@ def test_lora_communication(device):
         print(f"\033[33m  ⚠ Warning: {response}\033[0m")
 
     print(f"\n\033[97m  Summary: {tests_passed}/{tests_total} tests passed\033[0m")
-    
+
     # Consider successful if at least 4 out of 6 tests pass
     return tests_passed >= 4
 
