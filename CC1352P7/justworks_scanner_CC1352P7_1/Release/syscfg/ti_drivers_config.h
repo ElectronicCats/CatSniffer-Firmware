@@ -41,7 +41,7 @@ extern "C" {
  */
 
 extern const uint_least8_t CONFIG_Display_0_CONST;
-#define CONFIG_Display_0                0
+#define CONFIG_Display_0 0
 #define CONFIG_TI_DRIVERS_DISPLAY_COUNT 1
 
 /*
@@ -49,7 +49,7 @@ extern const uint_least8_t CONFIG_Display_0_CONST;
  */
 
 extern const uint_least8_t Board_AESCCM0_CONST;
-#define Board_AESCCM0                  0
+#define Board_AESCCM0 0
 #define CONFIG_TI_DRIVERS_AESCCM_COUNT 1
 
 /*
@@ -57,7 +57,7 @@ extern const uint_least8_t Board_AESCCM0_CONST;
  */
 
 extern const uint_least8_t CONFIG_AESCTRDRBG_0_CONST;
-#define CONFIG_AESCTRDRBG_0                0
+#define CONFIG_AESCTRDRBG_0 0
 #define CONFIG_TI_DRIVERS_AESCTRDRBG_COUNT 1
 
 /*
@@ -65,7 +65,7 @@ extern const uint_least8_t CONFIG_AESCTRDRBG_0_CONST;
  */
 
 extern const uint_least8_t CONFIG_AESECB0_CONST;
-#define CONFIG_AESECB0                 0
+#define CONFIG_AESECB0 0
 #define CONFIG_TI_DRIVERS_AESECB_COUNT 1
 
 /*
@@ -73,7 +73,7 @@ extern const uint_least8_t CONFIG_AESECB0_CONST;
  */
 
 extern const uint_least8_t CONFIG_ECDH0_CONST;
-#define CONFIG_ECDH0                 0
+#define CONFIG_ECDH0 0
 #define CONFIG_TI_DRIVERS_ECDH_COUNT 1
 
 /*
@@ -110,10 +110,10 @@ extern const uint_least8_t GPIO_pinLowerBound;
 extern const uint_least8_t GPIO_pinUpperBound;
 
 /* LEDs are active high */
-#define CONFIG_GPIO_LED_ON  (1)
+#define CONFIG_GPIO_LED_ON (1)
 #define CONFIG_GPIO_LED_OFF (0)
 
-#define CONFIG_LED_ON  (CONFIG_GPIO_LED_ON)
+#define CONFIG_LED_ON (CONFIG_GPIO_LED_ON)
 #define CONFIG_LED_OFF (CONFIG_GPIO_LED_OFF)
 
 /*
@@ -121,7 +121,7 @@ extern const uint_least8_t GPIO_pinUpperBound;
  */
 
 extern const uint_least8_t CONFIG_NVSINTERNAL_CONST;
-#define CONFIG_NVSINTERNAL          0
+#define CONFIG_NVSINTERNAL 0
 #define CONFIG_TI_DRIVERS_NVS_COUNT 1
 
 /*
@@ -134,7 +134,7 @@ extern const uint_least8_t CONFIG_NVSINTERNAL_CONST;
  */
 
 extern const uint_least8_t CONFIG_TRNG_0_CONST;
-#define CONFIG_TRNG_0                0
+#define CONFIG_TRNG_0 0
 #define CONFIG_TI_DRIVERS_TRNG_COUNT 1
 
 /*
@@ -147,7 +147,7 @@ extern const uint_least8_t CONFIG_TRNG_0_CONST;
  *  XDS110 UART
  */
 extern const uint_least8_t CONFIG_DISPLAY_UART_CONST;
-#define CONFIG_DISPLAY_UART           0
+#define CONFIG_DISPLAY_UART 0
 #define CONFIG_TI_DRIVERS_UART2_COUNT 1
 
 /*
