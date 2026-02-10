@@ -103,28 +103,28 @@
 
 // The order in this table must be identical to the task initialization calls below in osalInitTask.
 const pTaskEventHandlerFn tasksArr[] = {
-    LL_ProcessEvent, // task 0
-    HCI_ProcessEvent, // task 1
+	LL_ProcessEvent,  // task 0
+	HCI_ProcessEvent, // task 1
 #if defined(OSAL_CBTIMER_NUM_TASKS)
-    OSAL_CBTIMER_PROCESS_EVENT(osal_CbTimerProcessEvent), // task 2
+	OSAL_CBTIMER_PROCESS_EVENT(osal_CbTimerProcessEvent), // task 2
 #endif
-    L2CAP_ProcessEvent, // task 3
-    GAP_ProcessEvent, // task 4
-    SM_ProcessEvent, // task 5
-    GATT_ProcessEvent, // task 6
-    GATTServApp_ProcessEvent, // task 7
+	L2CAP_ProcessEvent,	  // task 3
+	GAP_ProcessEvent,	  // task 4
+	SM_ProcessEvent,	  // task 5
+	GATT_ProcessEvent,	  // task 6
+	GATTServApp_ProcessEvent, // task 7
 #if defined(GAP_BOND_MGR)
-    GAPBondMgr_ProcessEvent, // task 8
+	GAPBondMgr_ProcessEvent, // task 8
 #endif
 #ifdef ICALL_LITE
-    ble_dispatch_liteProcess, // task 9
+	ble_dispatch_liteProcess, // task 9
 #else
-    bleDispatch_ProcessEvent // task 9
+	bleDispatch_ProcessEvent // task 9
 #endif /* ICALL_LITE */
 };
 
 const uint8 tasksCnt = sizeof(tasksArr) / sizeof(tasksArr[0]);
-uint16* tasksEvents;
+uint16 *tasksEvents;
 
 /*********************************************************************
  * FUNCTIONS
@@ -139,142 +139,145 @@ uint16* tasksEvents;
  *
  * @return  none
  */
-void osalInitTasks(void) {
-    ICall_EntityID entity;
-    ICall_SyncHandle syncHandle;
-    uint8 taskID = 0;
-    uint8 i;
+void osalInitTasks(void)
+{
+	ICall_EntityID entity;
+	ICall_SyncHandle syncHandle;
+	uint8 taskID = 0;
+	uint8 i;
 
-    uint8_t cfg_GATTServApp_att_delayed_req = 0;
-    uint8_t cfg_gapBond_gatt_no_service_changed = 0;
+	uint8_t cfg_GATTServApp_att_delayed_req = 0;
+	uint8_t cfg_gapBond_gatt_no_service_changed = 0;
 #if defined(GAP_BOND_MGR)
-    uint8_t cfg_gapBond_gatt_no_client = 0;
+	uint8_t cfg_gapBond_gatt_no_client = 0;
 #endif
 
 #if defined(ATT_DELAYED_REQ)
-    cfg_GATTServApp_att_delayed_req = 1;
+	cfg_GATTServApp_att_delayed_req = 1;
 #endif
 #if defined(GATT_NO_SERVICE_CHANGED)
-    cfg_gapBond_gatt_no_service_changed = 1;
+	cfg_gapBond_gatt_no_service_changed = 1;
 #endif
 #if defined(GATT_NO_CLIENT)
-    cfg_gapBond_gatt_no_client = 1;
+	cfg_gapBond_gatt_no_client = 1;
 #endif
 
-    tasksEvents = (uint16*)osal_mem_alloc(sizeof(uint16) * tasksCnt);
-    osal_memset(tasksEvents, 0, (sizeof(uint16) * tasksCnt));
+	tasksEvents = (uint16 *)osal_mem_alloc(sizeof(uint16) * tasksCnt);
+	osal_memset(tasksEvents, 0, (sizeof(uint16) * tasksCnt));
 
-    /* LL Task */
-    LL_Init(taskID++);
+	/* LL Task */
+	LL_Init(taskID++);
 
-    /* HCI Task */
-    HCI_Init(taskID++);
+	/* HCI Task */
+	HCI_Init(taskID++);
 
 #if defined(OSAL_CBTIMER_NUM_TASKS)
-    /* Callback Timer Tasks */
-    osal_CbTimerInit(taskID);
-    taskID += OSAL_CBTIMER_NUM_TASKS;
+	/* Callback Timer Tasks */
+	osal_CbTimerInit(taskID);
+	taskID += OSAL_CBTIMER_NUM_TASKS;
 #endif
 
-    /* L2CAP Task */
-    L2CAP_Init(taskID++);
+	/* L2CAP Task */
+	L2CAP_Init(taskID++);
 
-    /* GAP Task */
-    GAP_Init(taskID++);
+	/* GAP Task */
+	GAP_Init(taskID++);
 
-    /* SM Task */
-    SM_Init(taskID++);
+	/* SM Task */
+	SM_Init(taskID++);
 
-    /* GATT Task */
-    GATT_Init(taskID++);
+	/* GATT Task */
+	GATT_Init(taskID++);
 
-    /* GATT Server App Task */
-    GATTServApp_Init(
-        taskID++, cfg_GATTServApp_att_delayed_req, cfg_gapBond_gatt_no_service_changed);
+	/* GATT Server App Task */
+	GATTServApp_Init(taskID++, cfg_GATTServApp_att_delayed_req,
+			 cfg_gapBond_gatt_no_service_changed);
 
 #if defined(GAP_BOND_MGR)
-    /* Bond Manager Task */
-    GAPBondMgr_Init(
-        taskID++,
-        GAP_BONDINGS_MAX,
-        GAP_CHAR_CFG_MAX,
-        cfg_gapBond_gatt_no_client,
-        cfg_gapBond_gatt_no_service_changed);
+	/* Bond Manager Task */
+	GAPBondMgr_Init(taskID++, GAP_BONDINGS_MAX, GAP_CHAR_CFG_MAX,
+			cfg_gapBond_gatt_no_client,
+			cfg_gapBond_gatt_no_service_changed);
 #endif
 
 #ifdef ICALL_LITE
-    ble_dispatch_liteInit(taskID++);
+	ble_dispatch_liteInit(taskID++);
 #else
-    /* ICall BLE Dispatcher Task */
-    bleDispatch_Init(taskID);
+	/* ICall BLE Dispatcher Task */
+	bleDispatch_Init(taskID);
 #endif /* ICALL_LITE */
 
 #if defined(NOTIFY_PARAM_UPDATE_RJCT)
-    HCI_ParamUpdateRjctEvtRegister();
+	HCI_ParamUpdateRjctEvtRegister();
 #endif
 
-    // ICall enrollment
-    /* Enroll the service that this stack represents */
-    ICall_enrollService(ICALL_SERVICE_CLASS_BLE, NULL, &entity, &syncHandle);
+	// ICall enrollment
+	/* Enroll the service that this stack represents */
+	ICall_enrollService(ICALL_SERVICE_CLASS_BLE, NULL, &entity,
+			    &syncHandle);
 
 #ifndef ICALL_LITE
-    /* Enroll the obtained dispatcher entity and OSAL task ID of HCI Ext App
+	/* Enroll the obtained dispatcher entity and OSAL task ID of HCI Ext App
    * to OSAL so that OSAL can route the dispatcher message into
    * the appropriate OSAL task.
    */
-    osal_enroll_dispatchid(taskID, entity);
+	osal_enroll_dispatchid(taskID, entity);
 #endif /* ICALL_LITE */
-    /* Register all other OSAL tasks to use the registered dispatcher entity
+	/* Register all other OSAL tasks to use the registered dispatcher entity
    * ID as the source of dispatcher messages, even though the other OSAL
    * tasks didn't register themselves to receive messages from application.
    */
-    for(i = 0; i < taskID; i++) {
-        osal_enroll_senderid(i, entity);
-    }
+	for (i = 0; i < taskID; i++) {
+		osal_enroll_senderid(i, entity);
+	}
 }
 
 /**
  * Main entry function for the stack image
  */
-int stack_main(void* arg) {
-    /* User reconfiguration of BLE Controller and Host variables */
-    setBleUserConfig((icall_userCfg_t*)arg);
+int stack_main(void *arg)
+{
+	/* User reconfiguration of BLE Controller and Host variables */
+	setBleUserConfig((icall_userCfg_t *)arg);
 
-    /* Establish OSAL for a stack service that requires accompanying
+	/* Establish OSAL for a stack service that requires accompanying
    * messaging service */
-    if(ICall_enrollService(
-           ICALL_SERVICE_CLASS_BLE_MSG,
-           (ICall_ServiceFunc)osal_service_entry,
-           &osal_entity,
-           &osal_syncHandle) != ICALL_ERRNO_SUCCESS) {
-        /* abort */
-        ICall_abort();
-    }
+	if (ICall_enrollService(ICALL_SERVICE_CLASS_BLE_MSG,
+				(ICall_ServiceFunc)osal_service_entry,
+				&osal_entity,
+				&osal_syncHandle) != ICALL_ERRNO_SUCCESS) {
+		/* abort */
+		ICall_abort();
+	}
 
-    // Disable interrupts
-    halIntState_t state;
-    HAL_ENTER_CRITICAL_SECTION(state);
+	// Disable interrupts
+	halIntState_t state;
+	HAL_ENTER_CRITICAL_SECTION(state);
 
 #if defined(ICALL_LITE) && (!defined(STACK_LIBRARY))
-    { icall_liteTranslationInit((uint32_t*)bleAPItable); }
+	{
+		icall_liteTranslationInit((uint32_t *)bleAPItable);
+	}
 #endif /* ICALL_LITE */
 
 #ifdef ICALL_LITE
-    { osal_set_icall_hook(icall_liteMsgParser); }
+	{
+		osal_set_icall_hook(icall_liteMsgParser);
+	}
 #endif /* ICALL_LITE */
 
-    // Initialize NV System
-    osal_snv_init();
+	// Initialize NV System
+	osal_snv_init();
 
-    // Initialize the operating system
-    osal_init_system();
+	// Initialize the operating system
+	osal_init_system();
 
-    // Allow interrupts
-    HAL_EXIT_CRITICAL_SECTION(state);
+	// Allow interrupts
+	HAL_EXIT_CRITICAL_SECTION(state);
 
-    osal_start_system(); // No Return from here
+	osal_start_system(); // No Return from here
 
-    return 0; // Shouldn't get here.
+	return 0; // Shouldn't get here.
 }
 
 /*********************************************************************

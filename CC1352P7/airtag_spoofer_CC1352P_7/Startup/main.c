@@ -118,45 +118,46 @@ extern Display_Handle dispHandle;
  *
  * @return      None.
  */
-int main() {
-    /* Register Application callback to trap asserts raised in the Stack */
-    RegisterAssertCback(AssertHandler);
+int main()
+{
+	/* Register Application callback to trap asserts raised in the Stack */
+	RegisterAssertCback(AssertHandler);
 
-    Board_initGeneral();
+	Board_initGeneral();
 
-    // Enable iCache prefetching
-    VIMSConfigure(VIMS_BASE, TRUE, TRUE);
-    // Enable cache
-    VIMSModeSet(VIMS_BASE, VIMS_MODE_ENABLED);
+	// Enable iCache prefetching
+	VIMSConfigure(VIMS_BASE, TRUE, TRUE);
+	// Enable cache
+	VIMSModeSet(VIMS_BASE, VIMS_MODE_ENABLED);
 
 #if !defined(POWER_SAVING)
-    /* Set constraints for Standby, powerdown and idle mode */
-    // PowerCC26XX_SB_DISALLOW may be redundant
-    Power_setConstraint(PowerCC26XX_SB_DISALLOW);
-    Power_setConstraint(PowerCC26XX_IDLE_PD_DISALLOW);
+	/* Set constraints for Standby, powerdown and idle mode */
+	// PowerCC26XX_SB_DISALLOW may be redundant
+	Power_setConstraint(PowerCC26XX_SB_DISALLOW);
+	Power_setConstraint(PowerCC26XX_IDLE_PD_DISALLOW);
 #endif // POWER_SAVING
 
-    /* Update User Configuration of the stack */
-    user0Cfg.appServiceInfo->timerTickPeriod = Clock_tickPeriod;
-    user0Cfg.appServiceInfo->timerMaxMillisecond = ICall_getMaxMSecs();
+	/* Update User Configuration of the stack */
+	user0Cfg.appServiceInfo->timerTickPeriod = Clock_tickPeriod;
+	user0Cfg.appServiceInfo->timerMaxMillisecond = ICall_getMaxMSecs();
 
-    /* Initialize ICall module */
-    ICall_init();
+	/* Initialize ICall module */
+	ICall_init();
 
-    /* Start tasks of external images - Priority 5 */
-    ICall_createRemoteTasks();
+	/* Start tasks of external images - Priority 5 */
+	ICall_createRemoteTasks();
 
 #ifdef PTM_MODE
-    /* Start task for NPI task */
-    NPITask_createTask(ICALL_SERVICE_CLASS_BLE);
+	/* Start task for NPI task */
+	NPITask_createTask(ICALL_SERVICE_CLASS_BLE);
 #endif // PTM_MODE
 
-    AirtagSpoofer_createTask();
+	AirtagSpoofer_createTask();
 
-    /* enable interrupts and start SYS/BIOS */
-    BIOS_start();
+	/* enable interrupts and start SYS/BIOS */
+	BIOS_start();
 
-    return 0;
+	return 0;
 }
 
 /*******************************************************************************
@@ -195,57 +196,59 @@ int main() {
  *
  * @return      None.
  */
-void AssertHandler(uint8 assertCause, uint8 assertSubcause) {
-    // Open the display if the app has not already done so
-    if(!dispHandle) {
-        dispHandle = Display_open(Display_Type_ANY, NULL);
-    }
+void AssertHandler(uint8 assertCause, uint8 assertSubcause)
+{
+	// Open the display if the app has not already done so
+	if (!dispHandle) {
+		dispHandle = Display_open(Display_Type_ANY, NULL);
+	}
 
-    Display_print0(dispHandle, 0, 0, ">>>STACK ASSERT");
+	Display_print0(dispHandle, 0, 0, ">>>STACK ASSERT");
 
-    // check the assert cause
-    switch(assertCause) {
-    case HAL_ASSERT_CAUSE_OUT_OF_MEMORY:
-        Display_print0(dispHandle, 0, 0, "***ERROR***");
-        Display_print0(dispHandle, 2, 0, ">> OUT OF MEMORY!");
-        break;
+	// check the assert cause
+	switch (assertCause) {
+	case HAL_ASSERT_CAUSE_OUT_OF_MEMORY:
+		Display_print0(dispHandle, 0, 0, "***ERROR***");
+		Display_print0(dispHandle, 2, 0, ">> OUT OF MEMORY!");
+		break;
 
-    case HAL_ASSERT_CAUSE_INTERNAL_ERROR:
-        // check the subcause
-        if(assertSubcause == HAL_ASSERT_SUBCAUSE_FW_INERNAL_ERROR) {
-            Display_print0(dispHandle, 0, 0, "***ERROR***");
-            Display_print0(dispHandle, 2, 0, ">> INTERNAL FW ERROR!");
-        } else {
-            Display_print0(dispHandle, 0, 0, "***ERROR***");
-            Display_print0(dispHandle, 2, 0, ">> INTERNAL ERROR!");
-        }
-        break;
+	case HAL_ASSERT_CAUSE_INTERNAL_ERROR:
+		// check the subcause
+		if (assertSubcause == HAL_ASSERT_SUBCAUSE_FW_INERNAL_ERROR) {
+			Display_print0(dispHandle, 0, 0, "***ERROR***");
+			Display_print0(dispHandle, 2, 0,
+				       ">> INTERNAL FW ERROR!");
+		} else {
+			Display_print0(dispHandle, 0, 0, "***ERROR***");
+			Display_print0(dispHandle, 2, 0, ">> INTERNAL ERROR!");
+		}
+		break;
 
-    case HAL_ASSERT_CAUSE_ICALL_ABORT:
-        Display_print0(dispHandle, 0, 0, "***ERROR***");
-        Display_print0(dispHandle, 2, 0, ">> ICALL ABORT!");
-        HAL_ASSERT_SPINLOCK;
-        break;
+	case HAL_ASSERT_CAUSE_ICALL_ABORT:
+		Display_print0(dispHandle, 0, 0, "***ERROR***");
+		Display_print0(dispHandle, 2, 0, ">> ICALL ABORT!");
+		HAL_ASSERT_SPINLOCK;
+		break;
 
-    case HAL_ASSERT_CAUSE_ICALL_TIMEOUT:
-        Display_print0(dispHandle, 0, 0, "***ERROR***");
-        Display_print0(dispHandle, 2, 0, ">> ICALL TIMEOUT!");
-        HAL_ASSERT_SPINLOCK;
-        break;
+	case HAL_ASSERT_CAUSE_ICALL_TIMEOUT:
+		Display_print0(dispHandle, 0, 0, "***ERROR***");
+		Display_print0(dispHandle, 2, 0, ">> ICALL TIMEOUT!");
+		HAL_ASSERT_SPINLOCK;
+		break;
 
-    case HAL_ASSERT_CAUSE_WRONG_API_CALL:
-        Display_print0(dispHandle, 0, 0, "***ERROR***");
-        Display_print0(dispHandle, 2, 0, ">> WRONG API CALL!");
-        HAL_ASSERT_SPINLOCK;
-        break;
+	case HAL_ASSERT_CAUSE_WRONG_API_CALL:
+		Display_print0(dispHandle, 0, 0, "***ERROR***");
+		Display_print0(dispHandle, 2, 0, ">> WRONG API CALL!");
+		HAL_ASSERT_SPINLOCK;
+		break;
 
-    default:
-        Display_print0(dispHandle, 0, 0, "***ERROR***");
-        Display_print0(dispHandle, 2, 0, ">> DEFAULT SPINLOCK!");
-        HAL_ASSERT_SPINLOCK;
-    }
+	default:
+		Display_print0(dispHandle, 0, 0, "***ERROR***");
+		Display_print0(dispHandle, 2, 0, ">> DEFAULT SPINLOCK!");
+		HAL_ASSERT_SPINLOCK;
+	}
 
-    return;
+	return;
 }
 
 /*******************************************************************************
@@ -263,9 +266,10 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause) {
  *
  * @return      None.
  */
-void smallErrorHook(Error_Block* eb) {
-    for(;;)
-        ;
+void smallErrorHook(Error_Block *eb)
+{
+	for (;;)
+		;
 }
 
 /*******************************************************************************

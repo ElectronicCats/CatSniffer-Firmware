@@ -32,7 +32,7 @@
 #define SET_CCFG_MODE_CONF_SCLK_LF_OPTION 0x2
 
 // Apply cap-array delta
-#define SET_CCFG_MODE_CONF_XOSC_CAP_MOD        0x0
+#define SET_CCFG_MODE_CONF_XOSC_CAP_MOD 0x0
 #define SET_CCFG_MODE_CONF_XOSC_CAPARRAY_DELTA 0xc1
 
 //#####################################

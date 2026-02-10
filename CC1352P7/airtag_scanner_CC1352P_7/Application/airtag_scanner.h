@@ -99,7 +99,7 @@ bool AirtagScanner_doStopDiscovering(uint8_t index);
 bool AirtagScanner_doAutoConnect(uint8_t index);
 
 /* Action for Menu: Connect */
-bool AirtagScanner_doConnect(GapScan_Evt_AdvRpt_t* pAdvInfo);
+bool AirtagScanner_doConnect(GapScan_Evt_AdvRpt_t *pAdvInfo);
 
 /* Action for Menu: Cancel Connecting */
 bool AirtagScanner_doCancelConnecting(uint8_t index);
@@ -125,7 +125,7 @@ bool AirtagScanner_doSetConnPhy(uint8_t index);
 /* Action for Menu: Disconnect */
 bool AirtagScanner_doDisconnect(uint8_t index);
 
-void Util_converData2Str(uint8_t* pData, uint8_t length);
+void Util_converData2Str(uint8_t *pData, uint8_t length);
 
 /*********************************************************************
 *********************************************************************/
