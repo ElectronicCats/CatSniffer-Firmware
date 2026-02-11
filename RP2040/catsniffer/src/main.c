@@ -4,6 +4,7 @@
  *
  */
 #include "catsniffer.h"
+#include "fw_metadata.h"
 #include "shell_commands.h"
 
 LOG_MODULE_REGISTER(catsniffer_main, LOG_LEVEL_INF);

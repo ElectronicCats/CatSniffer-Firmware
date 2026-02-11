@@ -3,6 +3,7 @@
  */
 
 #include "shell_commands.h"
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +11,7 @@
 #include <pico/bootrom.h>
 
 #include "catsniffer.h"
+#include "fw_metadata.h"
 
 // External functions from main.c
 void shell_reply(const char *msg);
@@ -51,6 +53,7 @@ static void cmd_lora_syncword(char *args);
 static void cmd_lora_iq(char *args);
 static void cmd_lora_config(char *args);
 static void cmd_lora_apply(char *args);
+static void cmd_cc1352_fw_id(char *args);
 
 // Command table
 static const shell_cmd_t commands[] = {
@@ -73,6 +76,7 @@ static const shell_cmd_t commands[] = {
 	{ "lora_iq", cmd_lora_iq, "normal|inverted IQ", true },
 	{ "lora_config", cmd_lora_config, "Show LoRa config", false },
 	{ "lora_apply", cmd_lora_apply, "Apply pending config", false },
+	{ "cc1352_fw_id", cmd_cc1352_fw_id, "set|get|clear|list CC1352 FW ID", true },
 	{ NULL, NULL, NULL, false }
 };
 
@@ -132,16 +136,127 @@ static void cmd_reboot(char *args)
 
 static void cmd_status(char *args)
 {
-	char buf[256];
+	char buf[320];
 	const char *mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ?
 				       "Stream" :
 				       "Command";
 	const char *lora_status =
 		catsniffer.lora_initialized ? "initialized" : "not initialized";
+	char fw_id[CC1352_FW_ID_MAX_LEN];
+	const char *fw_id_str = "unset";
+	const char *fw_type = "n/a";
+	if (fw_metadata_get_cc1352_fw_id(fw_id, sizeof(fw_id)) == 0) {
+		fw_id_str = fw_id;
+		fw_type = fw_metadata_is_official_cc1352_fw_id(fw_id) ? "official" :
+								      "custom";
+	}
 	snprintf(buf, sizeof(buf),
-		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s\r\n",
-		 catsniffer.mode, catsniffer.band, lora_status, mode_str);
+		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s, CC1352 FW: %s (%s)\r\n",
+		 catsniffer.mode, catsniffer.band, lora_status, mode_str,
+		 fw_id_str, fw_type);
 	shell_reply(buf);
+}
+
+static void cmd_cc1352_fw_id(char *args)
+{
+	char *subcmd;
+	char *value;
+
+	while (*args && *args != ' ') {
+		args++;
+	}
+	while (*args == ' ') {
+		args++;
+	}
+
+	subcmd = args;
+	while (*args && *args != ' ') {
+		args++;
+	}
+	if (*args != '\0') {
+		*args++ = '\0';
+	}
+	while (*args == ' ') {
+		args++;
+	}
+	value = args;
+
+	if (subcmd[0] == '\0') {
+		shell_reply("Usage: cc1352_fw_id <set|get|clear|list> [id]\r\n");
+		return;
+	}
+
+	if (strcmp(subcmd, "set") == 0) {
+		char msg[128];
+		const char *type;
+		int ret;
+
+		if (value[0] == '\0') {
+			shell_reply("Usage: cc1352_fw_id set <id>\r\n");
+			return;
+		}
+
+		ret = fw_metadata_set_cc1352_fw_id(value);
+		if (ret < 0) {
+			if (ret == -EINVAL) {
+				shell_reply("ERR invalid ID (allowed: a-z A-Z 0-9 _ - . , max 31)\r\n");
+			} else {
+				shell_reply("ERR storage unavailable\r\n");
+			}
+			return;
+		}
+
+		type = fw_metadata_is_official_cc1352_fw_id(value) ? "official" :
+								 "custom";
+		snprintf(msg, sizeof(msg), "OK cc1352_fw_id=%s (%s)\r\n", value,
+			 type);
+		shell_reply(msg);
+		return;
+	}
+
+	if (strcmp(subcmd, "get") == 0) {
+		char fw_id[CC1352_FW_ID_MAX_LEN];
+		char msg[128];
+		int ret = fw_metadata_get_cc1352_fw_id(fw_id, sizeof(fw_id));
+		if (ret == -ENOENT) {
+			shell_reply("OK cc1352_fw_id=unset\r\n");
+			return;
+		}
+		if (ret < 0) {
+			shell_reply("ERR storage unavailable\r\n");
+			return;
+		}
+
+		snprintf(msg, sizeof(msg), "OK cc1352_fw_id=%s type=%s\r\n", fw_id,
+			 fw_metadata_is_official_cc1352_fw_id(fw_id) ? "official" :
+									"custom");
+		shell_reply(msg);
+		return;
+	}
+
+	if (strcmp(subcmd, "clear") == 0) {
+		int ret = fw_metadata_clear_cc1352_fw_id();
+		if (ret < 0) {
+			shell_reply("ERR storage unavailable\r\n");
+			return;
+		}
+		shell_reply("OK cc1352_fw_id cleared\r\n");
+		return;
+	}
+
+	if (strcmp(subcmd, "list") == 0) {
+		char msg[96];
+		size_t count = fw_metadata_official_id_count();
+		shell_reply("Official CC1352 FW IDs:\r\n");
+		for (size_t i = 0; i < count; i++) {
+			const char *id = fw_metadata_official_id_by_index(i);
+			snprintf(msg, sizeof(msg), "  - %s\r\n", id);
+			shell_reply(msg);
+		}
+		return;
+	}
+
+	shell_reply("Usage: cc1352_fw_id <set|get|clear|list> [id]\r\n");
 }
 
 static void cmd_lora_freq(char *args)
