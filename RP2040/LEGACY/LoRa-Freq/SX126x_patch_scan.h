@@ -1,6 +1,7 @@
 /*
-Binary in this file originates from https://github.com/Lora-net/sx1302_hal/tree/master
-As such, license of the above repository is reproduced here.
+Binary in this file originates from
+https://github.com/Lora-net/sx1302_hal/tree/master As such, license of the above
+repository is reproduced here.
 
 Copyright (c) 2019, SEMTECH S.A.
 All rights reserved.

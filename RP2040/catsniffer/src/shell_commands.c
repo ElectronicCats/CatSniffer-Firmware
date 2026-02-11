@@ -76,7 +76,8 @@ static const shell_cmd_t commands[] = {
 	{ "lora_iq", cmd_lora_iq, "normal|inverted IQ", true },
 	{ "lora_config", cmd_lora_config, "Show LoRa config", false },
 	{ "lora_apply", cmd_lora_apply, "Apply pending config", false },
-	{ "cc1352_fw_id", cmd_cc1352_fw_id, "set|get|clear|list CC1352 FW ID", true },
+	{ "cc1352_fw_id", cmd_cc1352_fw_id, "set|get|clear|list CC1352 FW ID",
+	  true },
 	{ NULL, NULL, NULL, false }
 };
 
@@ -147,11 +148,14 @@ static void cmd_status(char *args)
 	const char *fw_type = "n/a";
 	if (fw_metadata_get_cc1352_fw_id(fw_id, sizeof(fw_id)) == 0) {
 		fw_id_str = fw_id;
-		fw_type = fw_metadata_is_official_cc1352_fw_id(fw_id) ? "official" :
-								      "custom";
+		fw_type = fw_metadata_is_official_cc1352_fw_id(fw_id) ? "offici"
+									"al" :
+									"custo"
+									"m";
 	}
 	snprintf(buf, sizeof(buf),
-		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s, CC1352 FW: %s (%s)\r\n",
+		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s, CC1352 FW: %s "
+		 "(%s)\r\n",
 		 catsniffer.mode, catsniffer.band, lora_status, mode_str,
 		 fw_id_str, fw_type);
 	shell_reply(buf);
@@ -161,101 +165,148 @@ static void cmd_cc1352_fw_id(char *args)
 {
 	char *subcmd;
 	char *value;
+	char fw_id[CC1352_FW_ID_MAX_LEN];
+	char msg[128];
+	int ret;
 
-	while (*args && *args != ' ') {
-		args++;
-	}
-	while (*args == ' ') {
-		args++;
-	}
+	LOG_DBG("cc1352_fw_id: args='%s'", args ? args : "NULL");
 
-	subcmd = args;
-	while (*args && *args != ' ') {
+	// Skip command name
+	while (*args && *args != ' ')
 		args++;
-	}
-	if (*args != '\0') {
-		*args++ = '\0';
-	}
-	while (*args == ' ') {
+	while (*args == ' ')
 		args++;
-	}
-	value = args;
 
-	if (subcmd[0] == '\0') {
-		shell_reply("Usage: cc1352_fw_id <set|get|clear|list> [id]\r\n");
+	if (*args == '\0') {
+		shell_reply("Usage: cc1352_fw_id <set|get|clear|list> [id]\r\n"
+			    "  set <id>    - Store firmware ID (max 31 chars, "
+			    "a-z A-Z 0-9 _ - .)\r\n"
+			    "  get         - Retrieve stored firmware ID\r\n"
+			    "  clear       - Delete stored firmware ID\r\n"
+			    "  list        - List official firmware IDs\r\n");
 		return;
 	}
 
-	if (strcmp(subcmd, "set") == 0) {
-		char msg[128];
-		const char *type;
-		int ret;
+	// Extract subcommand
+	subcmd = args;
+	while (*args && *args != ' ')
+		args++;
+	if (*args != '\0') {
+		*args++ = '\0';
+	}
+	while (*args == ' ')
+		args++;
+	value = args;
 
+	LOG_DBG("subcmd='%s', value='%s'", subcmd, value);
+
+	// --- SET command ---
+	if (strcmp(subcmd, "set") == 0) {
 		if (value[0] == '\0') {
-			shell_reply("Usage: cc1352_fw_id set <id>\r\n");
+			shell_reply("ERR: Missing firmware ID\r\n");
 			return;
 		}
 
+		// Truncate if too long (safety)
+		if (strlen(value) >= CC1352_FW_ID_MAX_LEN) {
+			strncpy(fw_id, value, CC1352_FW_ID_MAX_LEN - 1);
+			fw_id[CC1352_FW_ID_MAX_LEN - 1] = '\0';
+			value = fw_id;
+			LOG_WRN("Truncated FW ID to %d chars: %s",
+				CC1352_FW_ID_MAX_LEN - 1, fw_id);
+		}
+
 		ret = fw_metadata_set_cc1352_fw_id(value);
+
 		if (ret < 0) {
 			if (ret == -EINVAL) {
-				shell_reply("ERR invalid ID (allowed: a-z A-Z 0-9 _ - . , max 31)\r\n");
+				shell_reply("ERR: Invalid ID (allowed: a-z A-Z "
+					    "0-9 _ - . , max 31)\r\n");
+			} else if (ret == -ENOMEM) {
+				shell_reply("ERR: NVS write failed (out of "
+					    "space)\r\n");
+			} else if (ret == -EIO) {
+				shell_reply("ERR: Storage I/O error\r\n");
 			} else {
-				shell_reply("ERR storage unavailable\r\n");
+				shell_reply("ERR: Storage unavailable\r\n");
 			}
 			return;
 		}
 
-		type = fw_metadata_is_official_cc1352_fw_id(value) ? "official" :
-								 "custom";
+		// Success - include type info
+		const char *type = fw_metadata_is_official_cc1352_fw_id(value) ?
+					   "official" :
+					   "custom";
 		snprintf(msg, sizeof(msg), "OK cc1352_fw_id=%s (%s)\r\n", value,
 			 type);
 		shell_reply(msg);
+		LOG_INF("Set FW ID: %s (%s)", value, type);
 		return;
 	}
 
+	// --- GET command ---
 	if (strcmp(subcmd, "get") == 0) {
-		char fw_id[CC1352_FW_ID_MAX_LEN];
-		char msg[128];
-		int ret = fw_metadata_get_cc1352_fw_id(fw_id, sizeof(fw_id));
+		char fw_id_buf[CC1352_FW_ID_MAX_LEN];
+
+		ret = fw_metadata_get_cc1352_fw_id(fw_id_buf,
+						   sizeof(fw_id_buf));
+
 		if (ret == -ENOENT) {
 			shell_reply("OK cc1352_fw_id=unset\r\n");
 			return;
 		}
 		if (ret < 0) {
-			shell_reply("ERR storage unavailable\r\n");
+			shell_reply("ERR: Storage unavailable\r\n");
 			return;
 		}
 
-		snprintf(msg, sizeof(msg), "OK cc1352_fw_id=%s type=%s\r\n", fw_id,
-			 fw_metadata_is_official_cc1352_fw_id(fw_id) ? "official" :
-									"custom");
+		const char *type =
+			fw_metadata_is_official_cc1352_fw_id(fw_id_buf) ?
+				"official" :
+				"custom";
+		snprintf(msg, sizeof(msg), "OK cc1352_fw_id=%s type=%s\r\n",
+			 fw_id_buf, type);
 		shell_reply(msg);
+		LOG_DBG("Get FW ID: %s (%s)", fw_id_buf, type);
 		return;
 	}
 
+	// --- CLEAR command ---
 	if (strcmp(subcmd, "clear") == 0) {
-		int ret = fw_metadata_clear_cc1352_fw_id();
+		ret = fw_metadata_clear_cc1352_fw_id();
+
 		if (ret < 0) {
-			shell_reply("ERR storage unavailable\r\n");
+			if (ret == -ENOENT) {
+				shell_reply("OK cc1352_fw_id already "
+					    "cleared\r\n");
+				return;
+			}
+			shell_reply("ERR: Storage unavailable\r\n");
 			return;
 		}
+
 		shell_reply("OK cc1352_fw_id cleared\r\n");
+		LOG_INF("FW ID cleared");
 		return;
 	}
 
+	// --- LIST command ---
 	if (strcmp(subcmd, "list") == 0) {
-		char msg[96];
 		size_t count = fw_metadata_official_id_count();
+
 		shell_reply("Official CC1352 FW IDs:\r\n");
 		for (size_t i = 0; i < count; i++) {
 			const char *id = fw_metadata_official_id_by_index(i);
-			snprintf(msg, sizeof(msg), "  - %s\r\n", id);
-			shell_reply(msg);
+			if (id) {
+				snprintf(msg, sizeof(msg), "  - %s\r\n", id);
+				shell_reply(msg);
+			}
 		}
+		LOG_DBG("Listed %zu official IDs", count);
 		return;
 	}
 
+	// --- Unknown subcommand ---
 	shell_reply("Usage: cc1352_fw_id <set|get|clear|list> [id]\r\n");
 }
 
@@ -343,8 +394,8 @@ static void cmd_lora_bw(char *args)
 		bw_enum = BW_500_KHZ;
 		break;
 	default:
-		shell_reply(
-			"Error: Bandwidth must be 125, 250, or 500 kHz\r\n");
+		shell_reply("Error: Bandwidth must be 125, 250, or 500 "
+			    "kHz\r\n");
 		return;
 	}
 
@@ -386,8 +437,8 @@ static void cmd_lora_cr(char *args)
 		cr_enum = CR_4_8;
 		break;
 	default:
-		shell_reply(
-			"Error: Coding rate must be 5, 6, 7, or 8 (for 4/5, 4/6, 4/7, 4/8)\r\n");
+		shell_reply("Error: Coding rate must be 5, 6, 7, or 8 (for "
+			    "4/5, 4/6, 4/7, 4/8)\r\n");
 		return;
 	}
 

@@ -7,7 +7,7 @@
 
 #define LIB_VERSION "0.0.1"
 
-//Pin declaration to enter bootloader mode on CC1352
+// Pin declaration to enter bootloader mode on CC1352
 #define PIN_RESET (3)
 #define PIN_RESET_VIEWER (15)
 #define PIN_BOOT (2)
@@ -18,7 +18,7 @@
 #define LED2 (26)
 #define LED3 (28)
 
-//Pin Declaration for RF switch
+// Pin Declaration for RF switch
 #define CTF1 8
 #define CTF2 9
 #define CTF3 10
@@ -39,9 +39,9 @@
 extern CatSerCommand CatCMDHandler;
 
 typedef enum {
-	PASSTRHOUGH = 0, //Mode flag = 0; for passthrough @ 921600 bauds
-	BOOT,		 //Mode flag = 1; for bootloader options @ 500000 bauds
-	LORA		 //Mode flag = 2; for LoRaWAN @ 921600 bauds
+	PASSTRHOUGH = 0, // Mode flag = 0; for passthrough @ 921600 bauds
+	BOOT,		 // Mode flag = 1; for bootloader options @ 500000 bauds
+	LORA		 // Mode flag = 2; for LoRaWAN @ 921600 bauds
 } catsniffer_mode_t;
 
 typedef enum {

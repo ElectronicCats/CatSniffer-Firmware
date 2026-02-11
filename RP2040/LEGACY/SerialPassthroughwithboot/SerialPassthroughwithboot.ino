@@ -44,12 +44,12 @@ void setup()
 	pinMode(CTF2, OUTPUT);
 	pinMode(CTF3, OUTPUT);
 
-	//Make all cJTAG pins an input
+	// Make all cJTAG pins an input
 	for (int i = 11; i < 15; i++) {
 		pinMode(i, INPUT);
 	}
 
-	//Select mode and speed
+	// Select mode and speed
 	if (!digitalRead(Pin_Boot)) {
 		catsniffer.led_interval = 200;
 		catsniffer.baud = 500000;
@@ -62,7 +62,7 @@ void setup()
 	while (!digitalRead(Pin_Boot))
 		;
 
-	//Begin Serial ports
+	// Begin Serial ports
 	Serial.begin(catsniffer.baud);
 	Serial1.begin(catsniffer.baud);
 
@@ -73,7 +73,8 @@ void setup()
 	}
 
 	if (catsniffer.mode == PASSTRHOUGH) {
-		//Switch Radio for 2.4Ghz BLE by default can be changed on the fly
+		// Switch Radio for 2.4Ghz BLE by default can be changed on the
+		// fly
 		changeBand(&catsniffer, GIG);
 	}
 
@@ -84,12 +85,12 @@ void setup()
 
 void loop()
 {
-	//SerialPassthrough
+	// SerialPassthrough
 	if (Serial.available()) { // If anything comes in Serial (USB),
 		int data = Serial.read();
 		if (data == commandID[commandCounter]) {
 			commandCounter++;
-			if (commandCounter == 5) //all characters have matched
+			if (commandCounter == 5) // all characters have matched
 				commandRecognized = 1;
 		} else if (!commandRecognized) {
 			commandCounter = 0;
@@ -101,15 +102,15 @@ void loop()
 				commandData = "";
 				commandRecognized = 0;
 			}
-		} else { //Command not recognized, send out serial
-			Serial1.write(
-				data); // read it and send it out Serial1 (pins 0 & 1)
+		} else { // Command not recognized, send out serial
+			Serial1.write(data); // read it and send it out Serial1
+					     // (pins 0 & 1)
 		}
 	}
 
 	if (Serial1.available()) { // If anything comes in Serial1 (pins 0 & 1)
-		Serial.write(
-			Serial1.read()); // read it and send it out Serial (USB)
+		Serial.write(Serial1.read()); // read it and send it out Serial
+					      // (USB)
 	}
 
 	if (millis() - catsniffer.previousMillis > catsniffer.led_interval) {
@@ -136,7 +137,7 @@ void resetCC(void)
 void bootModeCC(void)
 {
 	pinMode(Pin_Boot, OUTPUT);
-	//Enter bootloader mode function
+	// Enter bootloader mode function
 	digitalWrite(Pin_Boot, LOW);
 	delay(100);
 	resetCC();
@@ -161,19 +162,19 @@ void changeBand(catsniffer_t *cs, unsigned long newBand)
 	if (newBand == cs->band)
 		return;
 	switch (newBand) {
-	case GIG: //2.4Ghz CC1352
+	case GIG: // 2.4Ghz CC1352
 		digitalWrite(CTF1, LOW);
 		digitalWrite(CTF2, HIGH);
 		digitalWrite(CTF3, LOW);
 		break;
 
-	case SUBGIG_1: //Sub-ghz CC1352
+	case SUBGIG_1: // Sub-ghz CC1352
 		digitalWrite(CTF1, LOW);
 		digitalWrite(CTF2, LOW);
 		digitalWrite(CTF3, HIGH);
 		break;
 
-	case SUBGIG_2: //LoRa
+	case SUBGIG_2: // LoRa
 		digitalWrite(CTF1, HIGH);
 		digitalWrite(CTF2, LOW);
 		digitalWrite(CTF3, LOW);
@@ -214,8 +215,8 @@ void processCommand(String *cmd)
 	// ñÿ<Payload>ÿñ Catsnifffer Commands
 	cmd->remove(0, 1);
 	cmd->remove(cmd->indexOf(">ÿñ"), 5);
-	//Serial.println(*cmd);
-	//enter boot mode
+	// Serial.println(*cmd);
+	// enter boot mode
 	if ("boot" == *cmd) {
 		changeMode(&catsniffer, BOOT);
 		Serial.println("BOOT");
@@ -223,7 +224,7 @@ void processCommand(String *cmd)
 		digitalWrite(LED2, 0);
 		digitalWrite(LED3, catsniffer.mode);
 	}
-	//exit boot mode
+	// exit boot mode
 	if ("exit" == *cmd) {
 		changeMode(&catsniffer, PASSTRHOUGH);
 		Serial.println("PASSTRHOUGH");
@@ -231,7 +232,7 @@ void processCommand(String *cmd)
 		digitalWrite(LED2, 0);
 		digitalWrite(LED3, 0);
 	}
-	//exit boot mode
+	// exit boot mode
 	if ("band1" == *cmd) {
 		changeBand(&catsniffer, GIG);
 		Serial.println("2.4Ghz Band");
@@ -260,9 +261,9 @@ void processCommand(String *cmd)
 		Serial.println(String(FIRMWARE_NAME));
 	}
 
-	//change RF band to work with
-	//Ping?
-	//Return catsniffer version
+	// change RF band to work with
+	// Ping?
+	// Return catsniffer version
 
 	return;
 }

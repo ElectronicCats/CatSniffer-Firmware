@@ -6,7 +6,8 @@
  * - Scan FSM + watchdog for stuck transitions
  * - Connects to connectable advertisers (per-MAC attempt limit & backoff)
  * - Detects "Just Works" pairing (no user interaction)
- * - After connect (paired or not): discover GAP service → read Device Name → try to write new name
+ * - After connect (paired or not): discover GAP service → read Device Name →
+ * try to write new name
  * - UART logging with rate limiting per MAC
  ******************************************************************************/
 
@@ -100,7 +101,8 @@ Display_Handle dispHandle = NULL;
 /* Per-MAC log rate limit (adv spam control) */
 #define LOG_RATELIMIT_MS 1500
 
-/* Unique report-field selection to avoid redefining ADV_RPT_FIELDS from SysConfig */
+/* Unique report-field selection to avoid redefining ADV_RPT_FIELDS from
+ * SysConfig */
 #define JW_ADV_RPT_FIELDS                                      \
 	(SCAN_ADVRPT_FLD_EVENTTYPE | SCAN_ADVRPT_FLD_ADDRESS | \
 	 SCAN_ADVRPT_FLD_ADDRTYPE | SCAN_ADVRPT_FLD_PRIMPHY |  \
@@ -148,7 +150,8 @@ typedef enum {
 typedef enum {
 	DISC_NONE = 0,
 	DISC_FIND_GAP_SERVICE, /* Discover primary service 0x1800 (GAP) */
-	DISC_READ_DEVNAME, /* Read Device Name (0x2A00) using ReadUsingCharUUID */
+	DISC_READ_DEVNAME,  /* Read Device Name (0x2A00) using ReadUsingCharUUID
+			     */
 	DISC_WRITE_DEVNAME, /* Try to write new Device Name */
 	DISC_DONE
 } disc_step_t;
@@ -157,7 +160,8 @@ typedef struct {
 	uint8_t inUse;
 	uint16_t connHandle;
 	uint16_t gapStartHdl, gapEndHdl;
-	uint16_t devNameValHdl; /* Value handle for Device Name (from ReadUsingCharUUID) */
+	uint16_t devNameValHdl; /* Value handle for Device Name (from
+				   ReadUsingCharUUID) */
 	disc_step_t step;
 	char prevName[32];
 } nameDisc_t;
@@ -584,7 +588,8 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 		if (logAllowed(pAdv->addr)) {
 			char evtStr[64];
 			evtTypeToStr(pAdv->evtType, evtStr, sizeof(evtStr));
-			DPRINTF("[SCAN] ADV from %s | name:%s | RSSI:%d dBm | addrType:%s | primPHY:%s secPHY:%s evt:%s",
+			DPRINTF("[SCAN] ADV from %s | name:%s | RSSI:%d dBm | "
+				"addrType:%s | primPHY:%s secPHY:%s evt:%s",
 				Util_convertBdAddr2Str(pAdv->addr),
 				name[0] ? name : "(no-name)", (int)pAdv->rssi,
 				addrTypeStr(pAdv->addrType),
@@ -613,7 +618,8 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 						pAdv->addr, DEFAULT_INIT_PHY,
 						CONNECTION_TIMEOUT);
 			} else if (exhausted) {
-				DPRINTF("[CONN] Max attempts reached for %s; skipping further tests",
+				DPRINTF("[CONN] Max attempts reached for %s; "
+					"skipping further tests",
 					Util_convertBdAddr2Str(pAdv->addr));
 			}
 		}
@@ -666,7 +672,8 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 		case SCAN_STATE_ENABLING:
 		case SCAN_STATE_DISABLING:
 			wantRestart = true;
-			DPRINTF("[SCAN] transition in progress (%s); will restart after it completes",
+			DPRINTF("[SCAN] transition in progress (%s); will "
+				"restart after it completes",
 				scanState == SCAN_STATE_ENABLING ? "ENABLING" :
 								   "DISABLING");
 			break;
@@ -678,7 +685,8 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 		if ((scanState == SCAN_STATE_ENABLING ||
 		     scanState == SCAN_STATE_DISABLING) &&
 		    (now - lastScanTransitionMs) > SCAN_TRANSITION_TIMEOUT_MS) {
-			DPRINTF("[SCAN][WD] transition timeout in state=%d; forcing disable→enable",
+			DPRINTF("[SCAN][WD] transition timeout in state=%d; "
+				"forcing disable→enable",
 				(int)scanState);
 			GapScan_disable(); /* OK even if already disabled */
 			wantRestart = false;
@@ -702,8 +710,8 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 				if (idx < MAX_NUM_BLE_CONNS &&
 				    !sawPasscodePrompt[idx])
 					JustWorksScanner_logInsecureJustWorks(
-						ch,
-						"no user interaction during pairing");
+						ch, "no user interaction "
+						    "during pairing");
 			} else {
 				DPRINTF("[PAIR] failed (0x%02X %s) conn=0x%04X",
 					status, pairStatusToStr(status), ch);
@@ -724,7 +732,8 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 	case JW_EVT_PASSCODE_NEEDED: {
 		jwPasscodeData_t *pData = (jwPasscodeData_t *)pMsg->pData;
 		uint16_t ch = pData->connHandle;
-		DPRINTF("[PAIR] PasscodeReq conn=0x%04X uiIn:%u uiOut:%u numCmp:%lu",
+		DPRINTF("[PAIR] PasscodeReq conn=0x%04X uiIn:%u uiOut:%u "
+			"numCmp:%lu",
 			ch, pData->uiInputs, pData->uiOutputs,
 			(unsigned long)pData->numComparison);
 
@@ -734,8 +743,9 @@ static void JustWorksScanner_processAppMsg(jwEvt_t *pMsg)
 
 		if (pData->uiInputs == 0 && pData->uiOutputs == 0 &&
 		    pData->numComparison == 0) {
-			JustWorksScanner_logInsecureJustWorks(
-				ch, "no IO, no Numeric Comparison");
+			JustWorksScanner_logInsecureJustWorks(ch, "no IO, no "
+								  "Numeric "
+								  "Comparison");
 		}
 
 		GAPBondMgr_PasscodeRsp(ch, SUCCESS, B_APP_DEFAULT_PASSCODE);
@@ -855,7 +865,8 @@ static void JustWorksScanner_processGapMsg(gapEventHdr_t *pMsg)
 		DPRINTF("[PAIR] Pairable set (INITIATE mode should trigger)");
 #endif
 
-		/* Kick off GAP Device Name read/rename flow (works with or without pairing) */
+		/* Kick off GAP Device Name read/rename flow (works with or
+		 * without pairing) */
 		startDevNameDiscovery(e->connectionHandle);
 	} break;
 
@@ -919,7 +930,8 @@ static void JustWorksScanner_processGATTMsg(gattMsgEvent_t *pMsg)
 
 		case ATT_WRITE_RSP:
 			if (c->step == DISC_WRITE_DEVNAME) {
-				DPRINTF("[INFO] Name write OK: \"%s\" -> \"Secure your device\"",
+				DPRINTF("[INFO] Name write OK: \"%s\" -> "
+					"\"Secure your device\"",
 					c->prevName);
 				c->step = DISC_DONE;
 			}
@@ -928,7 +940,8 @@ static void JustWorksScanner_processGATTMsg(gattMsgEvent_t *pMsg)
 		case ATT_ERROR_RSP: {
 			attErrorRsp_t *e = &pMsg->msg.errorRsp;
 			if (c->step == DISC_READ_DEVNAME) {
-				DPRINTF("[INFO] GAP info flow stopped: DevName read failed (err=0x%02X, attr=0x%04X)",
+				DPRINTF("[INFO] GAP info flow stopped: DevName "
+					"read failed (err=0x%02X, attr=0x%04X)",
 					e->errCode, e->handle);
 				c->step = DISC_DONE;
 			} else if (c->step == DISC_WRITE_DEVNAME) {
@@ -997,7 +1010,8 @@ static void startDevNameDiscovery(uint16_t connHandle)
 						    ATT_BT_UUID_SIZE,
 						    selfEntity);
 	if (s != SUCCESS) {
-		DPRINTF("[INFO] GAP info flow stopped: GAP service discover start failed (0x%02X)",
+		DPRINTF("[INFO] GAP info flow stopped: GAP service discover "
+			"start failed (0x%02X)",
 			s);
 		freeNameCtx(connHandle);
 		return;
@@ -1040,7 +1054,8 @@ static void handleReadByGrpTypeRsp(uint16_t connHandle,
 
 	bStatus_t s = GATT_ReadUsingCharUUID(connHandle, &r, selfEntity);
 	if (s != SUCCESS) {
-		DPRINTF("[INFO] GAP info flow stopped: DevName read start failed (0x%02X)",
+		DPRINTF("[INFO] GAP info flow stopped: DevName read start "
+			"failed (0x%02X)",
 			s);
 		c->step = DISC_DONE;
 		return;
@@ -1057,7 +1072,8 @@ static void handleReadByTypeRsp_Name(uint16_t connHandle,
 		return;
 
 	if (rsp->pDataList == NULL || rsp->len < 3) {
-		DPRINTF("[INFO] GAP info flow stopped: DevName char discovery start failed");
+		DPRINTF("[INFO] GAP info flow stopped: DevName char discovery "
+			"start failed");
 		c->step = DISC_DONE;
 		return;
 	}
@@ -1114,7 +1130,8 @@ static void continueNameFlow(uint16_t connHandle)
 			ICall_free(w.pValue);
 			c->step = DISC_DONE;
 		} else {
-			/* On SUCCESS, the stack owns the buffer and will free it */
+			/* On SUCCESS, the stack owns the buffer and will free
+			 * it */
 			DPRINTF("[INFO] Writing new name...");
 		}
 	}

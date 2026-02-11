@@ -15,8 +15,9 @@
 #include <zephyr/drivers/lora.h>
 
 #define DEFAULT_RADIO_NODE DT_ALIAS(lora0)
-BUILD_ASSERT(DT_NODE_HAS_STATUS_OKAY(DEFAULT_RADIO_NODE),
-	     "No default LoRa radio specified in DT");
+BUILD_ASSERT(DT_NODE_HAS_STATUS_OKAY(DEFAULT_RADIO_NODE), "No default LoRa "
+							  "radio specified in "
+							  "DT");
 
 static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 static const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);

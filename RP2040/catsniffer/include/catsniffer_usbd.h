@@ -12,11 +12,11 @@
 
 /*
  * This function uses Kconfig.sample_usbd options to configure and initialize a
- * USB device. It configures sample's device context, default string descriptors,
- * USB device configuration, registers any available class instances, and
- * finally initializes USB device. It is limited to a single device with a
- * single configuration instantiated in sample_usbd_init.c, which should be
- * enough for a simple USB device sample.
+ * USB device. It configures sample's device context, default string
+ * descriptors, USB device configuration, registers any available class
+ * instances, and finally initializes USB device. It is limited to a single
+ * device with a single configuration instantiated in sample_usbd_init.c, which
+ * should be enough for a simple USB device sample.
  *
  * It returns the configured and initialized USB device context on success,
  * otherwise it returns NULL.

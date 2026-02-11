@@ -11,8 +11,7 @@
  * flash_write_partial() is referenced by the flash driver but not provided.
  */
 __attribute__((weak)) void flash_write_partial(uint32_t offset,
-					       const uint8_t *data,
-					       size_t size)
+					       const uint8_t *data, size_t size)
 {
 	uint32_t page_base = offset & ~(PAGE_SIZE - 1U);
 	uint32_t page_offset = offset - page_base;

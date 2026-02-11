@@ -23,7 +23,7 @@
  *
  * You should have received a copy of the GNU Lesser General Public License
  * along with this library.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 #include "CatSerCommand.h"
 
 /**
@@ -58,8 +58,8 @@ void CatSerCommand::addCommand(const char *command, void (*function)())
 }
 
 /**
- * This sets up a handler to be called in the event that the receveived command string
- * isn't in the list of commands.
+ * This sets up a handler to be called in the event that the receveived command
+ * string isn't in the list of commands.
  */
 void CatSerCommand::setDefaultHandler(void (*function)(const char *))
 {
@@ -67,30 +67,33 @@ void CatSerCommand::setDefaultHandler(void (*function)(const char *))
 }
 
 /**
- * This checks the Serial stream for characters, and assembles them into a buffer.
- * When the terminator character (default '\n') is seen, it starts parsing the
- * buffer for a prefix command, and calls handlers setup by addCommand() member
+ * This checks the Serial stream for characters, and assembles them into a
+ * buffer. When the terminator character (default '\n') is seen, it starts
+ * parsing the buffer for a prefix command, and calls handlers setup by
+ * addCommand() member
  */
 void CatSerCommand::readSerial()
 {
 	while (Serial.available() > 0) {
-		char inChar =
-			Serial.read(); // Read single available character, there may be more waiting
+		char inChar = Serial.read(); // Read single available character,
+					     // there may be more waiting
 
-		if (inChar ==
-		    term) { // Check for the terminator (default '\r') meaning end of command
-			char *command = strtok_r(
-				buffer, delim,
-				&last); // Search for command at start of buffer
+		if (inChar == term) { // Check for the terminator (default '\r')
+				      // meaning end of command
+			char *command = strtok_r(buffer, delim,
+						 &last); // Search for command
+							 // at start of buffer
 			if (command != NULL) {
 				boolean matched = false;
 				for (int i = 0; i < commandCount; i++) {
-					// Compare the found command against the list of known commands for a match
+					// Compare the found command against the
+					// list of known commands for a match
 					if (strncmp(command,
 						    commandList[i].command,
 						    SERIALCOMMAND_MAXCOMMANDLENGTH) ==
 					    0) {
-						// Execute the stored handler function for the command
+						// Execute the stored handler
+						// function for the command
 						(*commandList[i].function)();
 						matched = true;
 						break;
@@ -101,11 +104,12 @@ void CatSerCommand::readSerial()
 				}
 			}
 			clearBuffer();
-		} else if (isprint(inChar)) { // Only printable characters into the buffer
+		} else if (isprint(inChar)) { // Only printable characters into
+					      // the buffer
 			if (bufPos < SERIALCOMMAND_BUFFER) {
-				buffer[bufPos++] =
-					inChar; // Put character into buffer
-				buffer[bufPos] = '\0'; // Null terminate
+				buffer[bufPos++] = inChar; // Put character into
+							   // buffer
+				buffer[bufPos] = '\0';	   // Null terminate
 			}
 		}
 	}

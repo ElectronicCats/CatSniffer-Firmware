@@ -22,12 +22,13 @@
 // RF design based on: LP_CC1352P7-1
 
 // TX Power tables
-// The RF_TxPowerTable_DEFAULT_PA_ENTRY and RF_TxPowerTable_HIGH_PA_ENTRY macros are defined in RF.h.
-// The following arguments are required:
+// The RF_TxPowerTable_DEFAULT_PA_ENTRY and RF_TxPowerTable_HIGH_PA_ENTRY macros
+// are defined in RF.h. The following arguments are required:
 // RF_TxPowerTable_DEFAULT_PA_ENTRY(bias, gain, boost, coefficient)
 // RF_TxPowerTable_HIGH_PA_ENTRY(bias, ibboost, boost, coefficient, ldoTrim)
-// See the Technical Reference Manual for further details about the "txPower" Command field.
-// The PA settings require the CCFG_FORCE_VDDR_HH = 0 unless stated otherwise.
+// See the Technical Reference Manual for further details about the "txPower"
+// Command field. The PA settings require the CCFG_FORCE_VDDR_HH = 0 unless
+// stated otherwise.
 
 // 2400 MHz, 5 dBm
 RF_TxPowerTable_Entry txPowerTable_2400_pa5[TXPOWERTABLE_2400_PA5_SIZE] = {
@@ -57,7 +58,8 @@ RF_TxPowerTable_Entry txPowerTable_2400_pa5[TXPOWERTABLE_2400_PA5_SIZE] = {
 //*********************************************************************************
 
 // PARAMETER SUMMARY
-// NB! Setting RF parameters in this design has no effect as no RF commands are selected.
+// NB! Setting RF parameters in this design has no effect as no RF commands are
+// selected.
 
 // TI-RTOS RF Mode Object
 RF_Mode RF_modeBle = { .rfMode = RF_MODE_AUTO,

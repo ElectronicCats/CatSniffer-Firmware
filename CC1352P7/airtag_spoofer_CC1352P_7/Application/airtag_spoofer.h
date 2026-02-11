@@ -3,7 +3,7 @@
  @file  airtag_spoofer.h
 
  @brief This file contains the CatSniffer Airtag Spoofer application
-        definitions and prototypes.
+	definitions and prototypes.
 
  Group: WCS, BTS
  Target Device: cc13xx_cc26xx
@@ -53,8 +53,8 @@ extern "C" {
 #endif
 
 /*********************************************************************
-*  EXTERNAL VARIABLES
-*/
+ *  EXTERNAL VARIABLES
+ */
 
 /*********************************************************************
  * CONSTANTS

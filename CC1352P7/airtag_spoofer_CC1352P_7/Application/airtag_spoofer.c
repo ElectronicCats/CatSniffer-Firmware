@@ -3,7 +3,7 @@
  @file  airtag_spoofer.c
 
  @brief This file contains the the CatSniffer Airtag Spoofer application for use
-        with the Bluetooth Low Energy Protocol Stack.
+	with the Bluetooth Low Energy Protocol Stack.
 
  Group: WCS, BTS
  Target Device: cc13xx_cc26xx
@@ -75,7 +75,7 @@
 
 #ifdef USE_RCOSC
 #include <rcosc_calibration.h>
-#endif //USE_RCOSC
+#endif // USE_RCOSC
 
 #include <ti_drivers_config.h>
 #include <board_key.h>
@@ -352,7 +352,8 @@ static gapBondCBs_t AirtagSpoofer_BondMgrCBs = {
 
 // Simple GATT Profile Callbacks
 static simpleProfileCBs_t AirtagSpoofer_simpleProfileCBs = {
-	AirtagSpoofer_charValueChangeCB // Simple GATT Characteristic value change callback
+	AirtagSpoofer_charValueChangeCB // Simple GATT Characteristic value
+					// change callback
 };
 
 /*********************************************************************
@@ -436,13 +437,14 @@ static void AirtagSpoofer_init(void)
 		uint16_t paramUpdateDecision =
 			DEFAULT_PARAM_UPDATE_REQ_DECISION;
 
-		// Pass all parameter update requests to the app for it to decide
+		// Pass all parameter update requests to the app for it to
+		// decide
 		GAP_SetParamValue(GAP_PARAM_LINK_UPDATE_DECISION,
 				  paramUpdateDecision);
 	}
 
-	// Setup the GAP Bond Manager. For more information see the GAP Bond Manager
-	// section in the User's Guide
+	// Setup the GAP Bond Manager. For more information see the GAP Bond
+	// Manager section in the User's Guide
 	setBondManagerParameters();
 
 	// Initialize GATT attributes
@@ -452,8 +454,8 @@ static void AirtagSpoofer_init(void)
 	SimpleProfile_AddService(GATT_ALL_SERVICES); // Simple GATT Profile
 
 	// Setup the SimpleProfile Characteristic Values
-	// For more information, see the GATT and GATTServApp sections in the User's Guide:
-	// http://software-dl.ti.com/lprf/ble5stack-latest/
+	// For more information, see the GATT and GATTServApp sections in the
+	// User's Guide: http://software-dl.ti.com/lprf/ble5stack-latest/
 	{
 		uint8_t charValue1 = 1;
 		uint8_t charValue2 = 2;
@@ -479,24 +481,27 @@ static void AirtagSpoofer_init(void)
 	// Start Bond Manager and register callback
 	VOID GAPBondMgr_Register(&AirtagSpoofer_BondMgrCBs);
 
-	// Register with GAP for HCI/Host messages. This is needed to receive HCI
-	// events. For more information, see the HCI section in the User's Guide:
-	// http://software-dl.ti.com/lprf/ble5stack-latest/
+	// Register with GAP for HCI/Host messages. This is needed to receive
+	// HCI events. For more information, see the HCI section in the User's
+	// Guide: http://software-dl.ti.com/lprf/ble5stack-latest/
 	GAP_RegisterForMsgs(selfEntity);
 
-	// Register for GATT local events and ATT Responses pending for transmission
+	// Register for GATT local events and ATT Responses pending for
+	// transmission
 	GATT_RegisterForMsgs(selfEntity);
 
 	// Set default values for Data Length Extension
 	// Extended Data Length Feature is already enabled by default
 	{
-// Set initial values to maximum, RX is set to max. by default(251 octets, 2120us)
-// Some brand smartphone is essentially needing 251/2120, so we set them here.
-#define APP_SUGGESTED_PDU_SIZE 251 //default is 27 octets(TX)
-#define APP_SUGGESTED_TX_TIME 2120 //default is 328us(TX)
+// Set initial values to maximum, RX is set to max. by default(251 octets,
+// 2120us) Some brand smartphone is essentially needing 251/2120, so we set them
+// here.
+#define APP_SUGGESTED_PDU_SIZE 251 // default is 27 octets(TX)
+#define APP_SUGGESTED_TX_TIME 2120 // default is 328us(TX)
 
 		// This API is documented in hci.h
-		// See the LE Data Length Extension section in the BLE5-Stack User's Guide for information on using this command:
+		// See the LE Data Length Extension section in the BLE5-Stack
+		// User's Guide for information on using this command:
 		// http://software-dl.ti.com/lprf/ble5stack-latest/
 		HCI_LE_WriteSuggestedDefaultDataLenCmd(APP_SUGGESTED_PDU_SIZE,
 						       APP_SUGGESTED_TX_TIME);
@@ -511,7 +516,8 @@ static void AirtagSpoofer_init(void)
 	BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 			 "APP : ---- call GAP_DeviceInit",
 			 GAP_PROFILE_PERIPHERAL);
-	//Initialize GAP layer for Peripheral role and register to receive GAP events
+	// Initialize GAP layer for Peripheral role and register to receive GAP
+	// events
 	GAP_DeviceInit(GAP_PROFILE_PERIPHERAL, selfEntity, addrMode,
 		       &pRandomAddress);
 
@@ -539,9 +545,10 @@ static void AirtagSpoofer_taskFxn(UArg a0, UArg a1)
 	for (;;) {
 		uint32_t events;
 
-		// Waits for an event to be posted associated with the calling thread.
-		// Note that an event associated with a thread is posted when a
-		// message is queued to the message receive queue of the thread
+		// Waits for an event to be posted associated with the calling
+		// thread. Note that an event associated with a thread is posted
+		// when a message is queued to the message receive queue of the
+		// thread
 		events = Event_pend(syncEvent, Event_Id_NONE, SP_ALL_EVENTS,
 				    ICALL_TIMEOUT_FOREVER);
 
@@ -550,7 +557,8 @@ static void AirtagSpoofer_taskFxn(UArg a0, UArg a1)
 			ICall_ServiceEnum src;
 			ICall_HciExtEvt *pMsg = NULL;
 
-			// Fetch any available messages that might have been sent from the stack
+			// Fetch any available messages that might have been
+			// sent from the stack
 			if (ICall_fetchServiceMsg(&src, &dest,
 						  (void **)&pMsg) ==
 			    ICALL_ERRNO_SUCCESS) {
@@ -587,7 +595,8 @@ static void AirtagSpoofer_taskFxn(UArg a0, UArg a1)
 						AirtagSpoofer_processAppMsg(
 							pMsg);
 
-						// Free the space from the message.
+						// Free the space from the
+						// message.
 						ICall_free(pMsg);
 					}
 				}
@@ -648,9 +657,14 @@ static uint8_t AirtagSpoofer_processStackMsg(ICall_Hdr *pMsg)
 			case HCI_LE_SET_PHY: {
 				if (pMyMsg->cmdStatus ==
 				    HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE) {
-					//Display_printf(dispHandle, SP_ROW_STATUS_1, 0,"PHY Change failure, peer does not support this");
+					// Display_printf(dispHandle,
+					// SP_ROW_STATUS_1, 0,"PHY Change
+					// failure, peer does not support
+					// this");
 				} else {
-					//Display_printf(dispHandle, SP_ROW_STATUS_1, 0,"PHY Update Status Event: 0x%x",pMyMsg->cmdStatus);
+					// Display_printf(dispHandle,
+					// SP_ROW_STATUS_1, 0,"PHY Update Status
+					// Event: 0x%x",pMyMsg->cmdStatus);
 				}
 
 				AirtagSpoofer_updatePHYStat(HCI_LE_SET_PHY,
@@ -673,15 +687,24 @@ static uint8_t AirtagSpoofer_processStackMsg(ICall_Hdr *pMsg)
 			if (pPUC->BLEEventCode ==
 			    HCI_BLE_PHY_UPDATE_COMPLETE_EVENT) {
 				if (pPUC->status != SUCCESS) {
-					//Display_printf(dispHandle, SP_ROW_STATUS_1, 0,"PHY Change failure");
+					// Display_printf(dispHandle,
+					// SP_ROW_STATUS_1, 0,"PHY Change
+					// failure");
 				} else {
 					// Only symmetrical PHY is supported.
 					// rxPhy should be equal to txPhy.
-					//Display_printf(dispHandle, SP_ROW_STATUS_2, 0,
+					// Display_printf(dispHandle,
+					// SP_ROW_STATUS_2, 0,
 					//   "PHY Updated to %s",
-					//    (pPUC->rxPhy == PHY_UPDATE_COMPLETE_EVENT_1M) ? "1M" :
-					//   (pPUC->rxPhy == PHY_UPDATE_COMPLETE_EVENT_2M) ? "2M" :
-					//  (pPUC->rxPhy == PHY_UPDATE_COMPLETE_EVENT_CODED) ? "CODED" : "Unexpected PHY Value");
+					//    (pPUC->rxPhy ==
+					//    PHY_UPDATE_COMPLETE_EVENT_1M) ?
+					//    "1M" :
+					//   (pPUC->rxPhy ==
+					//   PHY_UPDATE_COMPLETE_EVENT_2M) ?
+					//   "2M" :
+					//  (pPUC->rxPhy ==
+					//  PHY_UPDATE_COMPLETE_EVENT_CODED) ?
+					//  "CODED" : "Unexpected PHY Value");
 				}
 
 				AirtagSpoofer_updatePHYStat(
@@ -716,15 +739,18 @@ static uint8_t AirtagSpoofer_processStackMsg(ICall_Hdr *pMsg)
 static uint8_t AirtagSpoofer_processGATTMsg(gattMsgEvent_t *pMsg)
 {
 	if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
-		// ATT request-response or indication-confirmation flow control is
-		// violated. All subsequent ATT requests or indications will be dropped.
-		// The app is informed in case it wants to drop the connection.
+		// ATT request-response or indication-confirmation flow control
+		// is violated. All subsequent ATT requests or indications will
+		// be dropped. The app is informed in case it wants to drop the
+		// connection.
 
 		// Display the opcode of the message that caused the violation.
-		//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "FC Violated: %d", pMsg->msg.flowCtrlEvt.opcode);
+		// Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "FC Violated:
+		// %d", pMsg->msg.flowCtrlEvt.opcode);
 	} else if (pMsg->method == ATT_MTU_UPDATED_EVENT) {
 		// MTU size updated
-		//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "MTU Size: %d", pMsg->msg.mtuEvt.MTU);
+		// Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "MTU Size:
+		// %d", pMsg->msg.mtuEvt.MTU);
 	}
 
 	// Free message payload. Needed only for ATT Protocol messages
@@ -834,7 +860,8 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 			// Store the system ID
 			uint8_t systemId[DEVINFO_SYSTEM_ID_LEN];
 
-			// use 6 bytes of device address for 8 bytes of system ID value
+			// use 6 bytes of device address for 8 bytes of system
+			// ID value
 			systemId[0] = pPkt->devAddr[0];
 			systemId[1] = pPkt->devAddr[1];
 			systemId[2] = pPkt->devAddr[2];
@@ -852,23 +879,26 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 			DevInfo_SetParameter(DEVINFO_SYSTEM_ID,
 					     DEVINFO_SYSTEM_ID_LEN, systemId);
 
-			//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Initialized");
+			// Display_printf(dispHandle, SP_ROW_STATUS_1, 0,
+			// "Initialized");
 
-			BLE_LOG_INT_TIME(
-				0, BLE_LOG_MODULE_APP,
-				"APP : ---- got GAP_DEVICE_INIT_DONE_EVENT", 0);
+			BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
+					 "APP : ---- got "
+					 "GAP_DEVICE_INIT_DONE_EVENT",
+					 0);
 			// Setup and start Advertising
-			// For more information, see the GAP section in the User's Guide:
+			// For more information, see the GAP section in the
+			// User's Guide:
 			// http://software-dl.ti.com/lprf/ble5stack-latest/
 			advParams1.primIntMin = 0x80;
 			advParams1.primIntMax = 0x100;
 
 			advParams1.txPower = 0;
 			advParams1.primChanMap = GAP_ADV_CHAN_ALL;
-			BLE_LOG_INT_INT(
-				0, BLE_LOG_MODULE_APP,
-				"APP : ---- call GapAdv_create set=%d,%d\n", 0,
-				0);
+			BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP,
+					"APP : ---- call GapAdv_create "
+					"set=%d,%d\n",
+					0, 0);
 			// Create Advertisement set #1 and assign handle
 			status = GapAdv_create(&AirtagSpoofer_advCallback,
 					       &advParams1, &advHandleLegacy);
@@ -880,14 +910,16 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 				0xD6, 0xA4, 0x13, 0xA1, 0x9B, 0x30, 0x84, 0x4D,
 				0x60, 0x70, 0x59, 0xCF, 0xA2, 0x01, 0x45
 			};
-			// Load advertising data for set #1 that is statically allocated by the app
+			// Load advertising data for set #1 that is statically
+			// allocated by the app
 			status = GapAdv_loadByHandle(advHandleLegacy,
 						     GAP_ADV_DATA_TYPE_ADV,
 						     sizeof(airtag_adv_data),
 						     airtag_adv_data);
 			AIRTAGSPOOFER_ASSERT(status == SUCCESS);
 
-			// Load scan response data for set #1 that is statically allocated by the app
+			// Load scan response data for set #1 that is statically
+			// allocated by the app
 			status = GapAdv_loadByHandle(advHandleLegacy,
 						     GAP_ADV_DATA_TYPE_SCAN_RSP,
 						     sizeof(scanResData1),
@@ -907,17 +939,18 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 					       0);
 			AIRTAGSPOOFER_ASSERT(status == SUCCESS);
 
-			BLE_LOG_INT_INT(
-				0, BLE_LOG_MODULE_APP,
-				"APP : ---- call GapAdv_create set=%d,%d\n", 1,
-				0);
+			BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP,
+					"APP : ---- call GapAdv_create "
+					"set=%d,%d\n",
+					1, 0);
 			// Create Advertisement set #2 and assign handle
 			status = GapAdv_create(&AirtagSpoofer_advCallback,
 					       &advParams2,
 					       &advHandleLongRange);
 			AIRTAGSPOOFER_ASSERT(status == SUCCESS);
 
-			// Load advertising data for set #2 that is statically allocated by the app
+			// Load advertising data for set #2 that is statically
+			// allocated by the app
 			status = GapAdv_loadByHandle(advHandleLongRange,
 						     GAP_ADV_DATA_TYPE_ADV,
 						     sizeof(advData2),
@@ -971,13 +1004,15 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 		}
 		if ((numActive < MAX_NUM_BLE_CONNS) &&
 		    (autoConnect == AUTOCONNECT_DISABLE)) {
-			// Start advertising since there is room for more connections
+			// Start advertising since there is room for more
+			// connections
 			GapAdv_enable(advHandleLegacy,
 				      GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
 			GapAdv_enable(advHandleLongRange,
 				      GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
 		} else {
-			// Stop advertising since there is no room for more connections
+			// Stop advertising since there is no room for more
+			// connections
 			GapAdv_disable(advHandleLongRange);
 			GapAdv_disable(advHandleLegacy);
 		}
@@ -990,7 +1025,8 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 		// Display the amount of current connections
 		uint8_t numActive = linkDB_NumActive();
 
-		// Remove the connection from the list and disable RSSI if needed
+		// Remove the connection from the list and disable RSSI if
+		// needed
 		AirtagSpoofer_removeConn(pPkt->connectionHandle);
 
 		// If no active connections
@@ -1021,7 +1057,8 @@ static void AirtagSpoofer_processGapMessage(gapEventHdr_t *pMsg)
 		rsp.signalIdentifier = pReq->req.signalIdentifier;
 
 		// Only accept connection intervals with slave latency of 0
-		// This is just an example of how the application can send a response
+		// This is just an example of how the application can send a
+		// response
 		if (pReq->req.connLatency == 0) {
 			rsp.intervalMin = pReq->req.intervalMin;
 			rsp.intervalMax = pReq->req.intervalMax;
@@ -1118,13 +1155,15 @@ static void AirtagSpoofer_processCharValueChangeEvt(uint8_t paramId)
 	case SIMPLEPROFILE_CHAR1:
 		SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR1, &newValue);
 
-		//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Char 1: %d", (uint16_t)newValue);
+		// Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Char 1: %d",
+		// (uint16_t)newValue);
 		break;
 
 	case SIMPLEPROFILE_CHAR3:
 		SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &newValue);
 
-		//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Char 3: %d", (uint16_t)newValue);
+		// Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Char 3: %d",
+		// (uint16_t)newValue);
 		break;
 
 	default:
@@ -1153,10 +1192,11 @@ static void AirtagSpoofer_performPeriodicTask(void)
 	// Call to retrieve the value of the third characteristic in the profile
 	if (SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &valueToCopy) ==
 	    SUCCESS) {
-		// Call to set that value of the fourth characteristic in the profile.
-		// Note that if notifications of the fourth characteristic have been
-		// enabled by a GATT client device, then a notification will be sent
-		// every time this function is called.
+		// Call to set that value of the fourth characteristic in the
+		// profile. Note that if notifications of the fourth
+		// characteristic have been enabled by a GATT client device,
+		// then a notification will be sent every time this function is
+		// called.
 		SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR4, sizeof(uint8_t),
 					   &valueToCopy);
 	}
@@ -1181,7 +1221,7 @@ static void AirtagSpoofer_updateRPA(void)
 
 	if (memcmp(pRpaNew, rpa, B_ADDR_LEN)) {
 		// If the RPA has changed, update the display
-		//Display_printf(dispHandle, SP_ROW_RPA, 0, "RP Addr: %s",
+		// Display_printf(dispHandle, SP_ROW_RPA, 0, "RP Addr: %s",
 		// Util_convertBdAddr2Str(pRpaNew));
 		memcpy(rpa, pRpaNew, B_ADDR_LEN);
 	}
@@ -1276,13 +1316,15 @@ static void AirtagSpoofer_processAdvEvent(spGapAdvEventData_t *pEventData)
 		BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 				 "APP : ---- GAP_EVT_ADV_START_AFTER_ENABLE",
 				 0);
-		//Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d Enabled",
-		// *(uint8_t *)(pEventData->pBuf));
+		// Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d
+		// Enabled",
+		//  *(uint8_t *)(pEventData->pBuf));
 		break;
 
 	case GAP_EVT_ADV_END_AFTER_DISABLE:
-		//Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d Disabled",
-		// *(uint8_t *)(pEventData->pBuf));
+		// Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d
+		// Disabled",
+		//  *(uint8_t *)(pEventData->pBuf));
 		break;
 
 	case GAP_EVT_ADV_START:
@@ -1296,8 +1338,9 @@ static void AirtagSpoofer_processAdvEvent(spGapAdvEventData_t *pEventData)
 		GapAdv_setTerm_t *advSetTerm =
 			(GapAdv_setTerm_t *)(pEventData->pBuf);
 
-		//Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d disabled after conn %d",
-		//advSetTerm->handle, advSetTerm->connHandle );
+		// Display_printf(dispHandle, SP_ROW_ADVSTATE, 0, "Adv Set %d
+		// disabled after conn %d", advSetTerm->handle,
+		// advSetTerm->connHandle );
 #endif
 	} break;
 
@@ -1311,8 +1354,8 @@ static void AirtagSpoofer_processAdvEvent(spGapAdvEventData_t *pEventData)
 		break;
 	}
 
-	// All events have associated memory to free except the insufficient memory
-	// event
+	// All events have associated memory to free except the insufficient
+	// memory event
 	if (pEventData->event != GAP_EVT_INSUFFICIENT_MEMORY) {
 		ICall_free(pEventData->pBuf);
 	}
@@ -1387,30 +1430,37 @@ static void AirtagSpoofer_processPairState(spPairStateData_t *pPairData)
 
 	switch (state) {
 	case GAPBOND_PAIRING_STATE_STARTED:
-		//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing started");
+		// Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing
+		// started");
 		break;
 
 	case GAPBOND_PAIRING_STATE_COMPLETE:
 		if (status == SUCCESS) {
-			//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing success");
+			// Display_printf(dispHandle, SP_ROW_CONNECTION, 0,
+			// "Pairing success");
 		} else {
-			//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Pairing fail: %d", status);
+			// Display_printf(dispHandle, SP_ROW_CONNECTION, 0,
+			// "Pairing fail: %d", status);
 		}
 		break;
 
 	case GAPBOND_PAIRING_STATE_ENCRYPTED:
 		if (status == SUCCESS) {
-			//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Encryption success");
+			// Display_printf(dispHandle, SP_ROW_CONNECTION, 0,
+			// "Encryption success");
 		} else {
-			//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Encryption failed: %d", status);
+			// Display_printf(dispHandle, SP_ROW_CONNECTION, 0,
+			// "Encryption failed: %d", status);
 		}
 		break;
 
 	case GAPBOND_PAIRING_STATE_BOND_SAVED:
 		if (status == SUCCESS) {
-			//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Bond save success");
+			// Display_printf(dispHandle, SP_ROW_CONNECTION, 0,
+			// "Bond save success");
 		} else {
-			//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Bond save failed: %d", status);
+			// Display_printf(dispHandle, SP_ROW_CONNECTION, 0,
+			// "Bond save failed: %d", status);
 		}
 		break;
 
@@ -1430,8 +1480,9 @@ static void AirtagSpoofer_processPasscode(spPasscodeData_t *pPasscodeData)
 {
 	// Display passcode to user
 	if (pPasscodeData->uiOutputs != 0) {
-		//Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Passcode: %d",
-		//                   B_APP_DEFAULT_PASSCODE);
+		// Display_printf(dispHandle, SP_ROW_CONNECTION, 0, "Passcode:
+		// %d",
+		//                    B_APP_DEFAULT_PASSCODE);
 	}
 
 	// Send passcode response
@@ -1467,7 +1518,8 @@ static void AirtagSpoofer_processConnEvt(Gap_ConnEventRpt_t *pReport)
 	uint8_t connIndex = AirtagSpoofer_getConnIndex(pReport->handle);
 
 	if (connIndex >= MAX_NUM_BLE_CONNS) {
-		//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Connection handle is not in the connList !!!");
+		// Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Connection
+		// handle is not in the connList !!!");
 		return;
 	}
 
@@ -1713,7 +1765,8 @@ static void AirtagSpoofer_processParamUpdate(uint16_t connHandle)
 
 	connIndex = AirtagSpoofer_getConnIndex(connHandle);
 	if (connIndex >= MAX_NUM_BLE_CONNS) {
-		//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Connection handle is not in the connList !!!");
+		// Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Connection
+		// handle is not in the connList !!!");
 		return;
 	}
 
@@ -1731,7 +1784,8 @@ static void AirtagSpoofer_processParamUpdate(uint16_t connHandle)
 	// Send parameter update
 	bStatus_t status = GAP_UpdateLinkParamReq(&req);
 
-	// If there is an ongoing update, queue this for when the udpate completes
+	// If there is an ongoing update, queue this for when the udpate
+	// completes
 	if (status == bleAlreadyInRequestedMode) {
 		spConnHandleEntry_t *connHandleEntry =
 			ICall_malloc(sizeof(spConnHandleEntry_t));
@@ -1757,19 +1811,22 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 {
 	uint8_t status = pMsg->pReturnParam[0];
 
-	//Find which command this command complete is for
+	// Find which command this command complete is for
 	switch (pMsg->cmdOpcode) {
 	case HCI_READ_RSSI: {
 		int8 rssi = (int8)pMsg->pReturnParam[3];
 
-		// Display RSSI value, if RSSI is higher than threshold, change to faster PHY
+		// Display RSSI value, if RSSI is higher than threshold, change
+		// to faster PHY
 		if (status == SUCCESS) {
 			uint16_t handle = BUILD_UINT16(pMsg->pReturnParam[1],
 						       pMsg->pReturnParam[2]);
 
 			uint8_t index = AirtagSpoofer_getConnIndex(handle);
 			if (index >= MAX_NUM_BLE_CONNS) {
-				//Display_printf(dispHandle, SP_ROW_STATUS_1, 0, "Connection handle is not in the connList !!!");
+				// Display_printf(dispHandle, SP_ROW_STATUS_1,
+				// 0, "Connection handle is not in the connList
+				// !!!");
 				return;
 			}
 
@@ -1811,7 +1868,8 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 						    HCI_PHY_1_MBPS) &&
 						   (connList[index].currPhy !=
 						    SP_PHY_NONE)) {
-						// try to go to legacy regular data rate
+						// try to go to legacy regular
+						// data rate
 						phyRqS = phyRq = HCI_PHY_1_MBPS;
 					} else if ((connList[index].rssiAvg >=
 						    RSSI_S2_THRSHLD) &&
@@ -1819,24 +1877,30 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 						    RSSI_1M_THRSHLD) &&
 						   (connList[index].currPhy !=
 						    SP_PHY_NONE)) {
-						// try to go to lower data rate S=2(500kb/s)
+						// try to go to lower data rate
+						// S=2(500kb/s)
 						phyRqS = HCI_PHY_CODED;
 						phyOpt = LL_PHY_OPT_S2;
 						phyRq = BLE5_CODED_S2_PHY;
 					} else if (connList[index].rssiAvg <
 						   RSSI_S2_THRSHLD) {
-						// try to go to lowest data rate S=8(125kb/s)
+						// try to go to lowest data rate
+						// S=8(125kb/s)
 						phyRqS = HCI_PHY_CODED;
 						phyOpt = LL_PHY_OPT_S8;
 						phyRq = BLE5_CODED_S8_PHY;
 					}
 					if ((phyRq != SP_PHY_NONE) &&
-					    // First check if the request for this phy change is already not honored then don't request for change
+					    // First check if the request for
+					    // this phy change is already not
+					    // honored then don't request for
+					    // change
 					    (((connList[index].rqPhy == phyRq) &&
 					      (connList[index].phyRqFailCnt <
 					       2)) ||
 					     (connList[index].rqPhy != phyRq))) {
-						//Initiate PHY change based on RSSI
+						// Initiate PHY change based on
+						// RSSI
 						AirtagSpoofer_setPhy(
 							connList[index]
 								.connHandle,
@@ -1844,10 +1908,14 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 							phyOpt);
 						connList[index].phyCngRq = TRUE;
 
-						// If it a request for different phy than failed request, reset the count
+						// If it a request for different
+						// phy than failed request,
+						// reset the count
 						if (connList[index].rqPhy !=
 						    phyRq) {
-							// then reset the request phy counter and requested phy
+							// then reset the
+							// request phy counter
+							// and requested phy
 							connList[index]
 								.phyRqFailCnt =
 								0;
@@ -1865,14 +1933,16 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 								BLE5_CODED_S8_PHY;
 						}
 
-					} // end of if ((phyRq != SP_PHY_NONE) && ...
-				} // end of if (connList[index].phyCngRq == FALSE)
+					} // end of if ((phyRq != SP_PHY_NONE)
+					  // && ...
+				} // end of if (connList[index].phyCngRq ==
+				  // FALSE)
 			} // end of if (rssi != LL_RSSI_NOT_AVAILABLE)
 
-			//Display_printf(dispHandle, SP_ROW_RSSI, 0,
-			//                       "RSSI:%d dBm, AVG RSSI:%d dBm",
-			//                       (uint32_t)(rssi),
-			//                       connList[index].rssiAvg);
+			// Display_printf(dispHandle, SP_ROW_RSSI, 0,
+			//                        "RSSI:%d dBm, AVG RSSI:%d
+			//                        dBm", (uint32_t)(rssi),
+			//                        connList[index].rssiAvg);
 
 		} // end of if (status == SUCCESS)
 		break;
@@ -1880,8 +1950,9 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 
 	case HCI_LE_READ_PHY: {
 		if (status == SUCCESS) {
-			//Display_printf(dispHandle, SP_ROW_RSSI + 2, 0, "RXPh: %d, TXPh: %d",
-			// pMsg->pReturnParam[3], pMsg->pReturnParam[4]);
+			// Display_printf(dispHandle, SP_ROW_RSSI + 2, 0, "RXPh:
+			// %d, TXPh: %d",
+			//  pMsg->pReturnParam[3], pMsg->pReturnParam[4]);
 		}
 		break;
 	}
@@ -1892,20 +1963,20 @@ static void AirtagSpoofer_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
 }
 
 /*********************************************************************
-* @fn      AirtagSpoofer_initPHYRSSIArray
-*
-* @brief   Initializes the array of structure/s to store data related
-*          RSSI based auto PHy change
-*
-* @param   connHandle - the connection handle
-*
-* @param   addr - pointer to device address
-*
-* @return  index of connection handle
-*/
+ * @fn      AirtagSpoofer_initPHYRSSIArray
+ *
+ * @brief   Initializes the array of structure/s to store data related
+ *          RSSI based auto PHy change
+ *
+ * @param   connHandle - the connection handle
+ *
+ * @param   addr - pointer to device address
+ *
+ * @return  index of connection handle
+ */
 static void AirtagSpoofer_initPHYRSSIArray(void)
 {
-	//Initialize array to store connection handle and RSSI values
+	// Initialize array to store connection handle and RSSI values
 	memset(connList, 0, sizeof(connList));
 	for (uint8_t index = 0; index < MAX_NUM_BLE_CONNS; index++) {
 		connList[index].connHandle = SP_INVALID_HANDLE;
@@ -1965,7 +2036,8 @@ static status_t AirtagSpoofer_stopAutoPhyChange(uint16_t connHandle)
 	Gap_RegisterConnEventCb(NULL, GAP_CB_UNREGISTER, GAP_CB_CONN_EVENT_ALL,
 				connHandle);
 
-	// Also update the phychange request status for active RSSI tracking connection
+	// Also update the phychange request status for active RSSI tracking
+	// connection
 	connList[connIndex].phyCngRq = FALSE;
 	connList[connIndex].isAutoPHYEnable = FALSE;
 
@@ -2000,14 +2072,14 @@ static status_t AirtagSpoofer_setPhy(uint16_t connHandle, uint8_t allPhys,
 }
 
 /*********************************************************************
-* @fn      AirtagSpoofer_updatePHYStat
-*
-* @brief   Update the auto phy update state machine
-*
-* @param   connHandle - the connection handle
-*
-* @return  None
-*/
+ * @fn      AirtagSpoofer_updatePHYStat
+ *
+ * @brief   Update the auto phy update state machine
+ *
+ * @param   connHandle - the connection handle
+ *
+ * @return  None
+ */
 static void AirtagSpoofer_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
 {
 	uint8_t connIndex;
@@ -2032,7 +2104,8 @@ static void AirtagSpoofer_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
 
 				if (pMyMsg->cmdStatus ==
 				    HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE) {
-					// Update the phychange request status for active RSSI tracking connection
+					// Update the phychange request status
+					// for active RSSI tracking connection
 					connList[connIndex].phyCngRq = FALSE;
 					connList[connIndex].phyRqFailCnt++;
 				}
@@ -2053,7 +2126,8 @@ static void AirtagSpoofer_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
 
 			// Is this connection still valid?
 			if (connIndex < MAX_NUM_BLE_CONNS) {
-				// Update the phychange request status for active RSSI tracking connection
+				// Update the phychange request status for
+				// active RSSI tracking connection
 				connList[connIndex].phyCngRq = FALSE;
 
 				if (pPUC->status == SUCCESS) {
@@ -2063,7 +2137,8 @@ static void AirtagSpoofer_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
 				if (pPUC->rxPhy != connList[connIndex].rqPhy) {
 					connList[connIndex].phyRqFailCnt++;
 				} else {
-					// Reset the request phy counter and requested phy
+					// Reset the request phy counter and
+					// requested phy
 					connList[connIndex].phyRqFailCnt = 0;
 					connList[connIndex].rqPhy = 0;
 				}

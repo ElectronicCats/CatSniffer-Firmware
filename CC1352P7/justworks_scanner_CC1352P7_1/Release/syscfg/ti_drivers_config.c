@@ -409,7 +409,8 @@ const RFCC26XX_HWAttrsV2 RFCC26XX_hwAttrs = {
 /*
  *  ======== RF_globalCallbackFunction ========
  *  This function is called by the driver on global driver events.
- *  It will call specific callback functions to further handle the triggering events.
+ *  It will call specific callback functions to further handle the triggering
+ * events.
  */
 static void RF_globalCallbackFunction(RF_Handle client, RF_GlobalEvent events,
 				      void *arg)
@@ -420,41 +421,42 @@ static void RF_globalCallbackFunction(RF_Handle client, RF_GlobalEvent events,
 
 /*
  *  ======== rfDriverCallback ========
- *  Handle events triggered by the RF driver for custom / application specific behavior.
+ *  Handle events triggered by the RF driver for custom / application specific
+ * behavior.
  */
 void __attribute__((weak)) rfDriverCallback(RF_Handle client,
 					    RF_GlobalEvent events, void *arg)
 {
 	/* ======== PLEASE READ THIS ========
-    *
-    * This function is declared weak for the application to override it.
-    * A new definition of 'rfDriverCallback' is required if you want to
-    * handle the events listed in '.globalEventMask'.
-    *
-    * Please copy this function definition to create your own, but make
-    * sure to remove '__attribute__((weak))' for your definition.
-    *
-    * According to '.globalEventMask', this function will be triggered by:
-    *   - RF_GlobalEventInit
-    *   - RF_GlobalEventRadioPowerDown
-    *   - RF_GlobalEventRadioSetup
-    *
-    * An example of how to handle these events would be:
-    *
-    *   --- Code snippet begin ---
-    *
-    *   if(events & RF_GlobalEventInit) {
-    *       // Perform action for this event
-    *   }
-    *   else if (events & RF_GlobalEventRadioPowerDown) {
-    *       // Perform action for this event
-    *   }
-    *   else if (events & RF_GlobalEventRadioSetup) {
-    *       // Perform action for this event
-    *   }
-    *
-    *   --- Code snippet end ---
-    */
+	 *
+	 * This function is declared weak for the application to override it.
+	 * A new definition of 'rfDriverCallback' is required if you want to
+	 * handle the events listed in '.globalEventMask'.
+	 *
+	 * Please copy this function definition to create your own, but make
+	 * sure to remove '__attribute__((weak))' for your definition.
+	 *
+	 * According to '.globalEventMask', this function will be triggered by:
+	 *   - RF_GlobalEventInit
+	 *   - RF_GlobalEventRadioPowerDown
+	 *   - RF_GlobalEventRadioSetup
+	 *
+	 * An example of how to handle these events would be:
+	 *
+	 *   --- Code snippet begin ---
+	 *
+	 *   if(events & RF_GlobalEventInit) {
+	 *       // Perform action for this event
+	 *   }
+	 *   else if (events & RF_GlobalEventRadioPowerDown) {
+	 *       // Perform action for this event
+	 *   }
+	 *   else if (events & RF_GlobalEventRadioSetup) {
+	 *       // Perform action for this event
+	 *   }
+	 *
+	 *   --- Code snippet end ---
+	 */
 }
 
 /*
@@ -521,13 +523,14 @@ rfDriverCallbackAntennaSwitching(RF_Handle client, RF_GlobalEvent events,
 			/* Sub-1 GHz */
 			if (paType == RF_TxPowerTable_HighPA) {
 				/* PA enable --> HIGH PA
-                 * LNA enable --> Sub-1 GHz
-                 */
+				 * LNA enable --> Sub-1 GHz
+				 */
 				GPIO_setConfigAndMux(CONFIG_RF_24GHZ,
 						     GPIO_CFG_OUTPUT,
 						     IOC_PORT_GPIO);
-				/* Note: RFC_GPO3 is a work-around because the RFC_GPO1 (PA enable signal) is sometimes not
-                         de-asserted on CC1352 Rev A. */
+				/* Note: RFC_GPO3 is a work-around because the
+			 RFC_GPO1 (PA enable signal) is sometimes not
+			 de-asserted on CC1352 Rev A. */
 				GPIO_setConfigAndMux(CONFIG_RF_HIGH_PA,
 						     GPIO_CFG_OUTPUT,
 						     IOC_PORT_RFC_GPO3);
@@ -551,13 +554,14 @@ rfDriverCallbackAntennaSwitching(RF_Handle client, RF_GlobalEvent events,
 			/* 2.4 GHz */
 			if (paType == RF_TxPowerTable_HighPA) {
 				/* PA enable --> HIGH PA
-                 * LNA enable --> 2.4 GHz
-                 */
+				 * LNA enable --> 2.4 GHz
+				 */
 				GPIO_setConfigAndMux(CONFIG_RF_24GHZ,
 						     GPIO_CFG_OUTPUT,
 						     IOC_PORT_RFC_GPO0);
-				/* Note: RFC_GPO3 is a work-around because the RFC_GPO1 (PA enable signal) is sometimes not
-                         de-asserted on CC1352 Rev A. */
+				/* Note: RFC_GPO3 is a work-around because the
+			 RFC_GPO1 (PA enable signal) is sometimes not
+			 de-asserted on CC1352 Rev A. */
 				GPIO_setConfigAndMux(CONFIG_RF_HIGH_PA,
 						     GPIO_CFG_OUTPUT,
 						     IOC_PORT_RFC_GPO3);
@@ -712,10 +716,10 @@ void Board_sendExtFlashByte(uint8_t byte)
 		GPIO_write(BOARD_EXT_FLASH_SPI_CLK, 1); /* SPI Flash CLK */
 
 		/*
-         * Waste a few cycles to keep the CLK high for at
-         * least 45% of the period.
-         * 3 cycles per loop: 8 loops @ 48 Mhz = 0.5 us.
-         */
+		 * Waste a few cycles to keep the CLK high for at
+		 * least 45% of the period.
+		 * 3 cycles per loop: 8 loops @ 48 Mhz = 0.5 us.
+		 */
 		CPUdelay(8);
 	}
 
@@ -723,9 +727,9 @@ void Board_sendExtFlashByte(uint8_t byte)
 	GPIO_write(BOARD_EXT_FLASH_SPI_CS, 1);	/* CS */
 
 	/*
-     * Keep CS high at least 40 us
-     * 3 cycles per loop: 700 loops @ 48 Mhz ~= 44 us
-     */
+	 * Keep CS high at least 40 us
+	 * 3 cycles per loop: 700 loops @ 48 Mhz ~= 44 us
+	 */
 	CPUdelay(700);
 }
 
@@ -740,9 +744,9 @@ void Board_wakeUpExtFlash(void)
 						       GPIO_CFG_OUT_STR_MED);
 
 	/*
-     *  To wake up we need to toggle the chip select at
-     *  least 20 ns and ten wait at least 35 us.
-     */
+	 *  To wake up we need to toggle the chip select at
+	 *  least 20 ns and ten wait at least 35 us.
+	 */
 
 	/* Toggle chip select for ~20ns to wake ext. flash */
 	GPIO_write(BOARD_EXT_FLASH_SPI_CS, 0);
@@ -759,9 +763,9 @@ void Board_wakeUpExtFlash(void)
 void Board_shutDownExtFlash(void)
 {
 	/*
-     *  To be sure we are putting the flash into sleep and not waking it,
-     *  we first have to make a wake up call
-     */
+	 *  To be sure we are putting the flash into sleep and not waking it,
+	 *  we first have to make a wake up call
+	 */
 	Board_wakeUpExtFlash();
 
 	/* SPI Flash CS*/

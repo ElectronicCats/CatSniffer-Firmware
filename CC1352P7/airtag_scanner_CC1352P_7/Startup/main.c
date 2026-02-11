@@ -157,10 +157,9 @@ int main()
  * @fn          AssertHandler
  *
  * @brief       This is the Application's callback handler for asserts raised
- *              in the stack.  When EXT_HAL_ASSERT is defined in the Stack Wrapper
- *              project this function will be called when an assert is raised,
- *              and can be used to observe or trap a violation from expected
- *              behavior.
+ *              in the stack.  When EXT_HAL_ASSERT is defined in the Stack
+ * Wrapper project this function will be called when an assert is raised, and
+ * can be used to observe or trap a violation from expected behavior.
  *
  *              As an example, for Heap allocation failures the Stack will raise
  *              HAL_ASSERT_CAUSE_OUT_OF_MEMORY as the assertCause and

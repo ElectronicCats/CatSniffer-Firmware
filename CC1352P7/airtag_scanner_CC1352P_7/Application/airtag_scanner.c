@@ -98,10 +98,12 @@
 
 #define SC_ALL_EVENTS (SC_ICALL_EVT | SC_QUEUE_EVT)
 
-// Default connection interval when connecting to more then 8 connections and autoconnenct enabled
-#define DEFAULT_MULTICON_INTERVAL 200 //250 ms (200 frames of 1.25ms)
+// Default connection interval when connecting to more then 8 connections and
+// autoconnenct enabled
+#define DEFAULT_MULTICON_INTERVAL 200 // 250 ms (200 frames of 1.25ms)
 
-// Default connection supervision timeout when connnecting to more then 8 connections and autoconnenct enabled
+// Default connection supervision timeout when connnecting to more then 8
+// connections and autoconnenct enabled
 #define DEFAULT_MULTICON_LSTO 3200 // 32 secs
 
 // Supervision timeout conversion rate to miliseconds
@@ -128,13 +130,13 @@
 // Auto connect chosen group
 #define GROUP_NAME_LENGTH 4
 
-//Member defalult status when initalized
+// Member defalult status when initalized
 #define GROUP_MEMBER_INITIALIZED 0x00
 
-//Member connected
+// Member connected
 #define GROUP_MEMBER_CONNECTED 0x01
 
-//Default connection handle which is set when group member is created
+// Default connection handle which is set when group member is created
 #define GROUP_INITIALIZED_CONNECTION_HANDLE 0xFFFF
 #define CHAR_VALUE_LEN 3
 #define UUID_SIZE_16 2
@@ -295,16 +297,16 @@ static uint8 rpa[B_ADDR_LEN] = { 0 };
 // Auto connect Disabled/Enabled {0 - Disabled, 1- Group A , 2-Group B, ...}
 uint8_t autoConnect = AUTOCONNECT_DISABLE;
 
-//AutoConnect Group list
+// AutoConnect Group list
 static osal_list_list groupList;
 
-//AutoConnect ADV data filter according to local name short
+// AutoConnect ADV data filter according to local name short
 static uint8_t acGroup[4] = { 0x03, GAP_ADTYPE_LOCAL_NAME_SHORT, 'G', 'A' };
 
-//Number of group members found
+// Number of group members found
 static uint8_t numGroupMembers = 0;
 
-//Connection in progress to avoid double initiate
+// Connection in progress to avoid double initiate
 static groupListElem_t *memberInProg;
 
 /*********************************************************************
@@ -412,27 +414,32 @@ static void AirtagScanner_autoConnect(void)
 		if (numConn < MAX_NUM_BLE_CONNS) {
 			groupListElem_t *tempMember =
 				(groupListElem_t *)osal_list_head(&groupList);
-			//If group member is not connected
+			// If group member is not connected
 			if ((tempMember != NULL) &&
 			    (!(tempMember->status & GROUP_MEMBER_CONNECTED))) {
-				//Initiate a connection
+				// Initiate a connection
 				status = GapInit_connect(
 					tempMember->addrType & MASK_ADDRTYPE_ID,
 					tempMember->addr, DEFAULT_INIT_PHY,
 					CONNECTION_TIMEOUT);
 				if (status != SUCCESS) {
-					//Couldn't create connection remove element from list and free the memory.
+					// Couldn't create connection remove
+					// element from list and free the
+					// memory.
 					osal_list_remove(
 						&groupList,
 						(osal_list_elem *)tempMember);
 					ICall_free(tempMember);
 				} else {
-					//Save pointer to connection in progress untill connection is established.
+					// Save pointer to connection in
+					// progress untill connection is
+					// established.
 					memberInProg = tempMember;
 				}
 			}
 		} else {
-			//Display_printf(dispHandle, 0, 0, "AutoConnect turned off: Max connection reached.");
+			// Display_printf(dispHandle, 0, 0, "AutoConnect turned
+			// off: Max connection reached.");
 		}
 	}
 }
@@ -514,19 +521,21 @@ static void AirtagScanner_init(void)
 	GGS_SetParameter(GGS_DEVICE_NAME_ATT, GAP_DEVICE_NAME_LEN,
 			 (void *)attDeviceName);
 
-	//Set default values for Data Length Extension
-	//Extended Data Length Feature is already enabled by default
-	//in build_config.opt in stack project.
+	// Set default values for Data Length Extension
+	// Extended Data Length Feature is already enabled by default
+	// in build_config.opt in stack project.
 	{
-//Change initial values of RX/TX PDU and Time, RX is set to max. by default(251 octets, 2120us)
-#define APP_SUGGESTED_RX_PDU_SIZE 251 //default is 251 octets(RX)
-#define APP_SUGGESTED_RX_TIME 17000   //default is 17000us(RX)
-#define APP_SUGGESTED_TX_PDU_SIZE 27  //default is 27 octets(TX)
-#define APP_SUGGESTED_TX_TIME 328     //default is 328us(TX)
+// Change initial values of RX/TX PDU and Time, RX is set to max. by default(251
+// octets, 2120us)
+#define APP_SUGGESTED_RX_PDU_SIZE 251 // default is 251 octets(RX)
+#define APP_SUGGESTED_RX_TIME 17000   // default is 17000us(RX)
+#define APP_SUGGESTED_TX_PDU_SIZE 27  // default is 27 octets(TX)
+#define APP_SUGGESTED_TX_TIME 328     // default is 328us(TX)
 
-		//This API is documented in hci.h
-		//See the LE Data Length Extension section in the BLE5-Stack User's Guide for information on using this command:
-		//http://software-dl.ti.com/lprf/ble5stack-latest/
+		// This API is documented in hci.h
+		// See the LE Data Length Extension section in the BLE5-Stack
+		// User's Guide for information on using this command:
+		// http://software-dl.ti.com/lprf/ble5stack-latest/
 		HCI_EXT_SetMaxDataLenCmd(APP_SUGGESTED_TX_PDU_SIZE,
 					 APP_SUGGESTED_TX_TIME,
 					 APP_SUGGESTED_RX_PDU_SIZE,
@@ -543,7 +552,8 @@ static void AirtagScanner_init(void)
 	GGS_AddService(GAP_SERVICE);		   // GAP
 	GATTServApp_AddService(GATT_ALL_SERVICES); // GATT attributes
 
-	// Register for GATT local events and ATT Responses pending for transmission
+	// Register for GATT local events and ATT Responses pending for
+	// transmission
 	GATT_RegisterForMsgs(selfEntity);
 
 	// Set Bond Manager parameters
@@ -562,7 +572,8 @@ static void AirtagScanner_init(void)
 
 	BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 			 "APP : ---- call GAP_DeviceInit", GAP_PROFILE_CENTRAL);
-	// Initialize GAP layer for Central role and register to receive GAP events
+	// Initialize GAP layer for Central role and register to receive GAP
+	// events
 	GAP_DeviceInit(GAP_PROFILE_CENTRAL, selfEntity, addrMode,
 		       &pRandomAddress);
 
@@ -689,24 +700,26 @@ static uint8_t AirtagScanner_processStackMsg(ICall_Hdr *pMsg)
 			case HCI_LE_SET_PHY: {
 				if (pMyMsg->cmdStatus ==
 				    HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE) {
-					Display_printf(
-						dispHandle, 0, 0,
-						"PHY Change failure, peer does not support this");
+					Display_printf(dispHandle, 0, 0,
+						       "PHY Change failure, "
+						       "peer does not support "
+						       "this");
 				} else {
-					Display_printf(
-						dispHandle, 0, 0,
-						"PHY Update Status: 0x%02x",
-						pMyMsg->cmdStatus);
+					Display_printf(dispHandle, 0, 0,
+						       "PHY Update Status: "
+						       "0x%02x",
+						       pMyMsg->cmdStatus);
 				}
 			} break;
 			case HCI_DISCONNECT:
 				break;
 
 			default: {
-				Display_printf(
-					dispHandle, 0, 0,
-					"Unknown Cmd Status: 0x%04x::0x%02x",
-					pMyMsg->cmdOpcode, pMyMsg->cmdStatus);
+				Display_printf(dispHandle, 0, 0,
+					       "Unknown Cmd Status: "
+					       "0x%04x::0x%02x",
+					       pMyMsg->cmdOpcode,
+					       pMyMsg->cmdStatus);
 			} break;
 			}
 		} break;
@@ -808,24 +821,26 @@ static void AirtagScanner_processAppMsg(scEvt_t *pMsg)
 
 		// Free report payload data
 		if (pAdvRpt->pData != NULL) {
-			//Util_converData2Str(pAdvRpt->pData, pAdvRpt->dataLen, message);
+			// Util_converData2Str(pAdvRpt->pData, pAdvRpt->dataLen,
+			// message);
 			if (pAdvRpt->pData[0] == 0x1E &&
 			    pAdvRpt->pData[2] == 0x4c &&
 			    pAdvRpt->pData[3] == 0x00) {
 				if (pAdvRpt->pData[4] == 0x12 &&
 				    pAdvRpt->pData[6] == 0x10) {
-					Display_printf(
-						dispHandle, 0, 0,
-						"Airtag detected! -> %s Status: Registered and active",
-						Util_convertBdAddr2Str(
-							pAdvRpt->addr));
+					Display_printf(dispHandle, 0, 0,
+						       "Airtag detected! -> %s "
+						       "Status: Registered and "
+						       "active",
+						       Util_convertBdAddr2Str(
+							       pAdvRpt->addr));
 				} else if (pAdvRpt->pData[4] == 0x07 &&
 					   pAdvRpt->pData[6] == 0x05) {
-					Display_printf(
-						dispHandle, 0, 0,
-						"Airtag detected! -> %s Status: Unregistered",
-						Util_convertBdAddr2Str(
-							pAdvRpt->addr));
+					Display_printf(dispHandle, 0, 0,
+						       "Airtag detected! -> %s "
+						       "Status: Unregistered",
+						       Util_convertBdAddr2Str(
+							       pAdvRpt->addr));
 				}
 			}
 			ICall_free(pAdvRpt->pData);
@@ -935,8 +950,8 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 				 "APP : ---- got GAP_DEVICE_INIT_DONE_EVENT",
 				 0);
 		// Setup scanning
-		// For more information, see the GAP section in the User's Guide:
-		// http://software-dl.ti.com/lprf/ble5stack-latest/
+		// For more information, see the GAP section in the User's
+		// Guide: http://software-dl.ti.com/lprf/ble5stack-latest/
 
 		// Register callback to process Scanner events
 		GapScan_registerCb(AirtagScanner_scanCb, NULL);
@@ -964,8 +979,9 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 		// Set PDU type filter -
 		// Only 'Connectable' and 'Complete' packets are desired.
 		// It doesn't matter if received packets are
-		// whether Scannable or Non-Scannable, whether Directed or Undirected,
-		// whether Scan_Rsp's or Advertisements, and whether Legacy or Extended.
+		// whether Scannable or Non-Scannable, whether Directed or
+		// Undirected, whether Scan_Rsp's or Advertisements, and whether
+		// Legacy or Extended.
 		temp16 = SCAN_FLT_PDU_CONNECTABLE_ONLY |
 			 SCAN_FLT_PDU_COMPLETE_ONLY;
 		BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
@@ -982,8 +998,8 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 
 		scMaxPduSize = pPkt->dataPktLen;
 
-		// Enable "Discover Devices", "Set Scanning PHY", "AutoConnect" , and "Set Address Type"
-		// in the main menu
+		// Enable "Discover Devices", "Set Scanning PHY", "AutoConnect"
+		// , and "Set Address Type" in the main menu
 		Display_printf(dispHandle, 0, 0, "%s Addr: %s",
 			       (addrMode <= ADDRMODE_RANDOM) ? "Dev" : "ID",
 			       Util_convertBdAddr2Str(pPkt->devAddr));
@@ -1006,7 +1022,8 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 	case GAP_CONNECTING_CANCELLED_EVENT: {
 		if (autoConnect) {
 			if (memberInProg != NULL) {
-				//Remove node from member's group and free its memory.
+				// Remove node from member's group and free its
+				// memory.
 				osal_list_remove(
 					&groupList,
 					(osal_list_elem *)memberInProg);
@@ -1014,11 +1031,12 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 				numGroupMembers--;
 				memberInProg = NULL;
 			}
-			Display_printf(
-				dispHandle, 0, 0,
-				"AutoConnect: Number of members in the group %d",
-				numGroupMembers);
-			//Keep on connecting to the remaining members in the list
+			Display_printf(dispHandle, 0, 0,
+				       "AutoConnect: Number of members in the "
+				       "group %d",
+				       numGroupMembers);
+			// Keep on connecting to the remaining members in the
+			// list
 			AirtagScanner_autoConnect();
 		}
 
@@ -1037,17 +1055,18 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 				if (osal_memcmp((uint8_t *)pAddr,
 						(uint8_t *)memberInProg->addr,
 						B_ADDR_LEN)) {
-					//Move the connected member to the tail of the list.
+					// Move the connected member to the tail
+					// of the list.
 					osal_list_remove(
 						&groupList,
 						(osal_list_elem *)memberInProg);
 					osal_list_put(
 						&groupList,
 						(osal_list_elem *)memberInProg);
-					//Set the connected bit.;
+					// Set the connected bit.;
 					memberInProg->status |=
 						GROUP_MEMBER_CONNECTED;
-					//Store the connection handle.
+					// Store the connection handle.
 					memberInProg->connHandle = connHandle;
 					memberInProg = NULL;
 				}
@@ -1062,7 +1081,8 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 		// Add this connection info to the list
 		connIndex = AirtagScanner_addConnInfo(connHandle, pAddr);
 
-		// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+		// connIndex cannot be equal to or greater than
+		// MAX_NUM_BLE_CONNS
 		AirtagScanner_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
 		connList[connIndex].charHandle = 0;
@@ -1091,24 +1111,26 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 			((gapTerminateLinkEvent_t *)pMsg)->connectionHandle;
 		if (autoConnect) {
 			groupListElem_t *tempMember;
-			//Traverse from tail to head because of the sorting which put the connected at the end of the list.
+			// Traverse from tail to head because of the sorting
+			// which put the connected at the end of the list.
 			for (tempMember = (groupListElem_t *)osal_list_tail(
 				     &groupList);
 			     tempMember != NULL;
 			     tempMember = (groupListElem_t *)osal_list_prev(
 				     (osal_list_elem *)tempMember)) {
 				if (tempMember->connHandle == connHandle) {
-					//Move disconnected member to the head of the list for next connection.
+					// Move disconnected member to the head
+					// of the list for next connection.
 					osal_list_remove(
 						&groupList,
 						(osal_list_elem *)tempMember);
 					osal_list_putHead(
 						&groupList,
 						(osal_list_elem *)tempMember);
-					//Clear the connected flag.
+					// Clear the connected flag.
 					tempMember->status &=
 						~GROUP_MEMBER_CONNECTED;
-					//Clear the connnection handle.
+					// Clear the connnection handle.
 					tempMember->connHandle =
 						GROUP_INITIALIZED_CONNECTION_HANDLE;
 				}
@@ -1122,7 +1144,8 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 		if (autoConnect) {
 			AirtagScanner_autoConnect();
 		}
-		// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+		// connIndex cannot be equal to or greater than
+		// MAX_NUM_BLE_CONNS
 		AirtagScanner_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
 		pStrAddr = (uint8_t *)Util_convertBdAddr2Str(
@@ -1179,7 +1202,8 @@ static void AirtagScanner_processGapMsg(gapEventHdr_t *pMsg)
 					linkInfo.connTimeout *
 						CONN_TIMEOUT_MS_CONVERSION);
 			} else {
-				// Display the address of the connection update failure
+				// Display the address of the connection update
+				// failure
 				Display_printf(
 					dispHandle, 0, 0,
 					"Update Failed 0x%h: %s", pPkt->opcode,
@@ -1230,8 +1254,9 @@ static void AirtagScanner_processGATTMsg(gattMsgEvent_t *pMsg)
 	if (linkDB_Up(pMsg->connHandle)) {
 		// See if GATT server was unable to transmit an ATT response
 		if (pMsg->hdr.status == blePending) {
-			// No HCI buffer was available. App can try to retransmit the response
-			// on the next connection event. Drop it for now.
+			// No HCI buffer was available. App can try to
+			// retransmit the response on the next connection event.
+			// Drop it for now.
 			Display_printf(dispHandle, 0, 0, "ATT Rsp dropped %d",
 				       pMsg->method);
 		} else if ((pMsg->method == ATT_READ_RSP) ||
@@ -1242,7 +1267,8 @@ static void AirtagScanner_processGATTMsg(gattMsgEvent_t *pMsg)
 					       "Read Error %d",
 					       pMsg->msg.errorRsp.errCode);
 			} else {
-				// After a successful read, display the read value
+				// After a successful read, display the read
+				// value
 				Display_printf(dispHandle, 0, 0,
 					       "Read rsp: 0x%02x",
 					       pMsg->msg.readRsp.pValue[0]);
@@ -1255,18 +1281,20 @@ static void AirtagScanner_processGATTMsg(gattMsgEvent_t *pMsg)
 					       "Write Error %d",
 					       pMsg->msg.errorRsp.errCode);
 			} else {
-				// After a successful write, display the value that was written and
-				// increment value
+				// After a successful write, display the value
+				// that was written and increment value
 				Display_printf(dispHandle, 0, 0,
 					       "Write sent: 0x%02x", charVal);
 			}
 
 		} else if (pMsg->method == ATT_FLOW_CTRL_VIOLATED_EVENT) {
-			// ATT request-response or indication-confirmation flow control is
-			// violated. All subsequent ATT requests or indications will be dropped.
-			// The app is informed in case it wants to drop the connection.
+			// ATT request-response or indication-confirmation flow
+			// control is violated. All subsequent ATT requests or
+			// indications will be dropped. The app is informed in
+			// case it wants to drop the connection.
 
-			// Display the opcode of the message that caused the violation.
+			// Display the opcode of the message that caused the
+			// violation.
 			Display_printf(dispHandle, 0, 0, "FC Violated: %d",
 				       pMsg->msg.flowCtrlEvt.opcode);
 		} else if (pMsg->method == ATT_MTU_UPDATED_EVENT) {
@@ -1276,7 +1304,8 @@ static void AirtagScanner_processGATTMsg(gattMsgEvent_t *pMsg)
 		} else if (discState != BLE_DISC_STATE_IDLE) {
 			AirtagScanner_processGATTDiscEvent(pMsg);
 		}
-	} // else - in case a GATT message came after a connection has dropped, ignore it.
+	} // else - in case a GATT message came after a connection has dropped,
+	  // ignore it.
 
 	// Needed only for ATT Protocol messages
 	GATT_bm_free(&pMsg->msg, pMsg->method);
@@ -1408,18 +1437,21 @@ static void AirtagScanner_processPairState(uint8_t state,
 
 			if (linkDB_GetInfo(pPairData->connHandle, &linkInfo) ==
 			    SUCCESS) {
-				// If the peer was using private address, update with ID address
+				// If the peer was using private address, update
+				// with ID address
 				if ((linkInfo.addrType == ADDRTYPE_PUBLIC_ID ||
 				     linkInfo.addrType == ADDRTYPE_RANDOM_ID) &&
 				    !Util_isBufSet(linkInfo.addrPriv, 0,
 						   B_ADDR_LEN)) {
-					// Update the address of the peer to the ID address
+					// Update the address of the peer to the
+					// ID address
 					Display_printf(dispHandle, 0, 0,
 						       "Addr updated: %s",
 						       Util_convertBdAddr2Str(
 							       linkInfo.addr));
 
-					// Update the connection list with the ID address
+					// Update the connection list with the
+					// ID address
 					uint8_t i = AirtagScanner_getConnIndex(
 						pPairData->connHandle);
 
@@ -1573,10 +1605,12 @@ static void AirtagScanner_processGATTDiscEvent(gattMsgEvent_t *pMsg)
 			uint8_t connIndex =
 				AirtagScanner_getConnIndex(scConnHandle);
 
-			// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+			// connIndex cannot be equal to or greater than
+			// MAX_NUM_BLE_CONNS
 			AirtagScanner_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
-			// Store the handle of the simpleprofile characteristic 1 value
+			// Store the handle of the simpleprofile characteristic
+			// 1 value
 			connList[connIndex].charHandle = BUILD_UINT16(
 				pMsg->msg.readByTypeRsp.pDataList[3],
 				pMsg->msg.readByTypeRsp.pDataList[4]);
@@ -1635,7 +1669,8 @@ static bool AirtagScanner_findSvcUuid(uint16_t uuid, uint8_t *pData,
 						adLen -= 2;
 					}
 
-					// Handle possible erroneous extra byte in UUID list
+					// Handle possible erroneous extra byte
+					// in UUID list
 					if (adLen == 1) {
 						pData++;
 					}
@@ -1805,22 +1840,22 @@ static void AirtagScanner_pairStateCb(uint16_t connHandle, uint8_t state,
 }
 
 /*********************************************************************
-* @fn      AirtagScanner_passcodeCb
-*
-* @brief   Passcode callback.
-*
-* @param   deviceAddr - pointer to device address
-*
-* @param   connHandle - the connection handle
-*
-* @param   uiInputs - pairing User Interface Inputs
-*
-* @param   uiOutputs - pairing User Interface Outputs
-*
-* @param   numComparison - numeric Comparison 20 bits
-*
-* @return  none
-*/
+ * @fn      AirtagScanner_passcodeCb
+ *
+ * @brief   Passcode callback.
+ *
+ * @param   deviceAddr - pointer to device address
+ *
+ * @param   connHandle - the connection handle
+ *
+ * @param   uiInputs - pairing User Interface Inputs
+ *
+ * @param   uiOutputs - pairing User Interface Outputs
+ *
+ * @param   numComparison - numeric Comparison 20 bits
+ *
+ * @return  none
+ */
 static void AirtagScanner_passcodeCb(uint8_t *deviceAddr, uint16_t connHandle,
 				     uint8_t uiInputs, uint8_t uiOutputs,
 				     uint32_t numComparison)
@@ -1954,7 +1989,8 @@ bool AirtagScanner_doAutoConnect(uint8_t index)
 	if (index == 1) {
 		if ((autoConnect) && (autoConnect != AUTOCONNECT_GROUP_A)) {
 			groupListElem_t *tempMember;
-			//Traverse list to search if advertiser already in list.
+			// Traverse list to search if advertiser already in
+			// list.
 			for (tempMember = (groupListElem_t *)osal_list_head(
 				     &groupList);
 			     tempMember != NULL;
@@ -1973,7 +2009,8 @@ bool AirtagScanner_doAutoConnect(uint8_t index)
 	} else if (index == 2) {
 		if ((autoConnect) && (autoConnect != AUTOCONNECT_GROUP_B)) {
 			groupListElem_t *tempMember;
-			//Traverse list to search if advertiser already in list.
+			// Traverse list to search if advertiser already in
+			// list.
 			for (tempMember = (groupListElem_t *)osal_list_head(
 				     &groupList);
 			     tempMember != NULL;
@@ -1992,7 +2029,7 @@ bool AirtagScanner_doAutoConnect(uint8_t index)
 	} else {
 		autoConnect = AUTOCONNECT_DISABLE;
 		groupListElem_t *tempMember;
-		//Traverse list to search if advertiser already in list.
+		// Traverse list to search if advertiser already in list.
 		for (tempMember = (groupListElem_t *)osal_list_head(&groupList);
 		     tempMember != NULL;
 		     tempMember = (groupListElem_t *)osal_list_next(
@@ -2005,12 +2042,12 @@ bool AirtagScanner_doAutoConnect(uint8_t index)
 		Display_printf(dispHandle, 0, 0, "AutoConnect disabled");
 	}
 	if ((autoConnect) && (MAX_NUM_BLE_CONNS > 8)) {
-		//Disable accepting L2CAP param upadte request
+		// Disable accepting L2CAP param upadte request
 		acceptParamUpdateReq = false;
-		//Disable all parameter update requests
+		// Disable all parameter update requests
 		GAP_SetParamValue(GAP_PARAM_LINK_UPDATE_DECISION,
 				  GAP_UPDATE_REQ_DENY_ALL);
-		//Set connection interval and supervision timeout
+		// Set connection interval and supervision timeout
 		GapInit_setPhyParam(INIT_PHY_1M | INIT_PHY_2M | INIT_PHY_CODED,
 				    INIT_PHYPARAM_CONN_INT_MAX,
 				    DEFAULT_MULTICON_INTERVAL);
@@ -2071,11 +2108,12 @@ bool AirtagScanner_doDiscoverDevices(uint8_t index)
 	// Reset number of scan results to 0 before starting scan
 	numScanRes = 0;
 	GapScan_enable(0, DEFAULT_SCAN_DURATION, 0);
-#else	// !DEFAULT_DEV_DISC_BY_SVC_UUID
-	// Scanning for DEFAULT_SCAN_DURATION x 10 ms.
-	// Let the stack record the advertising reports as many as up to DEFAULT_MAX_SCAN_RES.
+#else  // !DEFAULT_DEV_DISC_BY_SVC_UUID
+       // Scanning for DEFAULT_SCAN_DURATION x 10 ms.
+       // Let the stack record the advertising reports as many as up to
+       // DEFAULT_MAX_SCAN_RES.
 	GapScan_enable(0, DEFAULT_SCAN_DURATION, DEFAULT_MAX_SCAN_RES);
-#endif	// DEFAULT_DEV_DISC_BY_SVC_UUID
+#endif // DEFAULT_DEV_DISC_BY_SVC_UUID
 
 	return (true);
 }
@@ -2117,12 +2155,15 @@ bool AirtagScanner_doConnect(GapScan_Evt_AdvRpt_t *pAdvInfo)
 	if (status == SUCCESS) {
 		char *serviceUUID = "AAAA";
 		// Discover services and characteristics
-		//bStatus_t status_gatt = GATT_DiscPrimaryServiceByUUID(scConnHandle, UUID_SIZE_16, (uint8_t*)serviceUUID, &scTask);
+		// bStatus_t status_gatt =
+		// GATT_DiscPrimaryServiceByUUID(scConnHandle, UUID_SIZE_16,
+		// (uint8_t*)serviceUUID, &scTask);
 
 		if (status == SUCCESS) {
 			uint8_t charUUID = 1;
 			// Find the handle of the characteristic to write
-			//uint16_t handle = GATT_FindHandle(scConnHandle, UUID_SIZE_16, (uint8_t*)charUUID, &scTask);
+			// uint16_t handle = GATT_FindHandle(scConnHandle,
+			// UUID_SIZE_16, (uint8_t*)charUUID, &scTask);
 			uint16_t handle = 0;
 			if (handle != ATT_HANDLE_NONE) {
 				// Write the characteristic value
@@ -2136,22 +2177,28 @@ bool AirtagScanner_doConnect(GapScan_Evt_AdvRpt_t *pAdvInfo)
 				writeReq.sig = 0;
 				writeReq.cmd = 0;
 
-				//status_gatt = GATT_WriteCharValue(scConnHandle, &writeReq, &scTask);
+				// status_gatt =
+				// GATT_WriteCharValue(scConnHandle, &writeReq,
+				// &scTask);
 
-				//if (status_gatt == SUCCESS)
+				// if (status_gatt == SUCCESS)
 				//{
-				//Display_printf(dispHandle, 0, 0, "Characteristic write successful!");
+				// Display_printf(dispHandle, 0, 0,
+				// "Characteristic write successful!");
+				//  }
+				// else
+				//{
+				// Display_printf(dispHandle, 0, 0,
+				// "Characteristic write failed with status:
+				// 0x%x", status_gatt);
 				// }
-				//else
-				//{
-				//Display_printf(dispHandle, 0, 0, "Characteristic write failed with status: 0x%x", status_gatt);
-				//}
 			} else {
 				Display_printf(dispHandle, 0, 0,
 					       "Characteristic not found!");
 			}
 		} else {
-			//Display_printf(dispHandle, 0, 0, "Service discovery failed with status: ", status_gatt);
+			// Display_printf(dispHandle, 0, 0, "Service discovery
+			// failed with status: ", status_gatt);
 		}
 	} else {
 		Display_printf(dispHandle, 0, 0,
@@ -2243,9 +2290,10 @@ bool AirtagScanner_doGattRead(uint8_t index)
 bool AirtagScanner_doGattWrite(uint8_t index)
 {
 	status_t status;
-	uint8_t charVals[4] = { 0x00, 0x55, 0xAA,
-				0xFF }; // Should be consistent with
-					// those in scMenuGattWrite
+	uint8_t charVals[4] = { 0x00, 0x55, 0xAA, 0xFF }; // Should be
+							  // consistent with
+							  // those in
+							  // scMenuGattWrite
 
 	attWriteReq_t req;
 
@@ -2254,7 +2302,8 @@ bool AirtagScanner_doGattWrite(uint8_t index)
 	if (req.pValue != NULL) {
 		uint8_t connIndex = AirtagScanner_getConnIndex(scConnHandle);
 
-		// connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
+		// connIndex cannot be equal to or greater than
+		// MAX_NUM_BLE_CONNS
 		AirtagScanner_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
 
 		req.handle = connList[connIndex].charHandle;
@@ -2286,16 +2335,16 @@ bool AirtagScanner_doRssiRead(uint8_t index)
 {
 	status_t status;
 
-	if ((1 << index)) //check index to toogle RSSI
+	if ((1 << index)) // check index to toogle RSSI
 	{
 		if ((status = AirtagScanner_StartRssi()) == SUCCESS) {
-			//get rssi
+			// get rssi
 		}
 	} else // SC_ITEM_STOP_RSSI
 	{
 		if ((status = AirtagScanner_CancelRssi(scConnHandle)) ==
 		    SUCCESS) {
-			//stop rssi
+			// stop rssi
 		}
 	}
 
@@ -2366,9 +2415,10 @@ bool AirtagScanner_doSetConnPhy(uint8_t index)
 	};
 
 	// Set Phy Preference on the current connection. Apply the same value
-	// for RX and TX. For more information, see the LE 2M PHY section in the User's Guide:
-	// http://software-dl.ti.com/lprf/ble5stack-latest/
-	// Note PHYs are already enabled by default in build_config.opt in stack project.
+	// for RX and TX. For more information, see the LE 2M PHY section in the
+	// User's Guide: http://software-dl.ti.com/lprf/ble5stack-latest/ Note
+	// PHYs are already enabled by default in build_config.opt in stack
+	// project.
 	HCI_LE_SetPhyCmd(scConnHandle, 0, phy[index], phy[index], 0);
 
 	return (true);

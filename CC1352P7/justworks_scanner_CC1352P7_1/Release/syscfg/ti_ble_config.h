@@ -23,7 +23,7 @@ extern uint8_t attDeviceName[GAP_DEVICE_NAME_LEN];
 // Default Tx Power Index
 #define DEFAULT_TX_POWER HCI_EXT_TX_POWER_0_DBM
 
-//Random Address
+// Random Address
 extern uint8_t pRandomAddress[B_ADDR_LEN];
 
 // Address mode of the local device
@@ -112,12 +112,12 @@ extern void setBondManagerParameters();
 // request is enabled
 #define DEFAULT_UPDATE_CONN_TIMEOUT 600
 
-//Primary PHY Parameters
+// Primary PHY Parameters
 
 // Default PHY for scanning
 #define DEFAULT_SCAN_PHY SCAN_PRIM_PHY_1M
 
-//Default Scan type (Active/Passive)
+// Default Scan type (Active/Passive)
 #define DEFAULT_SCAN_TYPE SCAN_TYPE_ACTIVE
 
 // Scan period

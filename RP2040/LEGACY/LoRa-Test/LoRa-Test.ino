@@ -39,7 +39,9 @@ void setup()
 
 	// initialize SX1262 with default settings
 	Serial.print(F("[SX1262] Initializing ... "));
-	//debing(float freq, float bw, uint8_t sf, uint8_t cr, uint8_t syncWord, int8_t power, uint16_t preambleLength, float tcxoVoltage, bool useRegulatorLDO)
+	// debing(float freq, float bw, uint8_t sf, uint8_t cr, uint8_t
+	// syncWord, int8_t power, uint16_t preambleLength, float tcxoVoltage,
+	// bool useRegulatorLDO)
 	int state = radio.begin(917.25, 500, 7, 5, 0x34, 20, 10, 0, false);
 	if (state == RADIOLIB_ERR_NONE) {
 		Serial.println(F("success!"));

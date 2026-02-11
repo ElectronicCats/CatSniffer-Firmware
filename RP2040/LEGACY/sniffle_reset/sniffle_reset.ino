@@ -106,8 +106,8 @@ void listenForSerial1(unsigned long duration)
 	while (millis() - startTime < duration) {
 		if (Serial1.available()) {
 			int incomingByte = Serial1.read();
-			Serial.write(
-				incomingByte); // Send it out to Serial (USB)
+			Serial.write(incomingByte); // Send it out to Serial
+						    // (USB)
 		}
 	}
 }

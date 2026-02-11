@@ -3,7 +3,7 @@
  @file  justworks_scanner.h
 
  @brief This file contains the Simple Central sample application
-        definitions and prototypes.
+	definitions and prototypes.
 
  Group: WCS, BTS
  Target Device: cc13xx_cc26xx
@@ -57,8 +57,8 @@ extern "C" {
  */
 
 /*********************************************************************
-*  EXTERNAL VARIABLES
-*/
+ *  EXTERNAL VARIABLES
+ */
 
 /*********************************************************************
  * CONSTANTS

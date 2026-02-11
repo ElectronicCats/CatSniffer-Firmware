@@ -1,7 +1,7 @@
 #ifndef SERIAL_PASSTHROUGH_H
 #define SERIAL_PASSTHROUGH_H
 
-//Pin declaration to enter bootloader mode on CC1352
+// Pin declaration to enter bootloader mode on CC1352
 #define Pin_Reset (3)
 #define Pin_Reset_Viewer (15)
 #define Pin_Boot (2)
@@ -9,15 +9,15 @@
 #define LED1 (27)
 #define LED2 (26)
 #define LED3 (28)
-//Pin Declaration for RF switch
+// Pin Declaration for RF switch
 #define CTF1 8
 #define CTF2 9
 #define CTF3 10
 
 enum MODE {
-	PASSTRHOUGH = 0, //Mode flag = 0; for passthrough @ 921600 bauds
-	BOOT,		 //Mode flag = 1; for bootloader options @ 500000 bauds
-	LORA		 //Mode flag = 2; for LoRaWAN @ 921600 bauds
+	PASSTRHOUGH = 0, // Mode flag = 0; for passthrough @ 921600 bauds
+	BOOT,		 // Mode flag = 1; for bootloader options @ 500000 bauds
+	LORA		 // Mode flag = 2; for LoRaWAN @ 921600 bauds
 };
 
 enum BAND {

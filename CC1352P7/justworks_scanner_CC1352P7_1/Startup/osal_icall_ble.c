@@ -101,7 +101,8 @@
  * GLOBAL VARIABLES
  */
 
-// The order in this table must be identical to the task initialization calls below in osalInitTask.
+// The order in this table must be identical to the task initialization calls
+// below in osalInitTask.
 const pTaskEventHandlerFn tasksArr[] = {
 	LL_ProcessEvent,  // task 0
 	HCI_ProcessEvent, // task 1
@@ -223,15 +224,16 @@ void osalInitTasks(void)
 
 #ifndef ICALL_LITE
 	/* Enroll the obtained dispatcher entity and OSAL task ID of HCI Ext App
-   * to OSAL so that OSAL can route the dispatcher message into
-   * the appropriate OSAL task.
-   */
+	 * to OSAL so that OSAL can route the dispatcher message into
+	 * the appropriate OSAL task.
+	 */
 	osal_enroll_dispatchid(taskID, entity);
 #endif /* ICALL_LITE */
 	/* Register all other OSAL tasks to use the registered dispatcher entity
-   * ID as the source of dispatcher messages, even though the other OSAL
-   * tasks didn't register themselves to receive messages from application.
-   */
+	 * ID as the source of dispatcher messages, even though the other OSAL
+	 * tasks didn't register themselves to receive messages from
+	 * application.
+	 */
 	for (i = 0; i < taskID; i++) {
 		osal_enroll_senderid(i, entity);
 	}
@@ -246,7 +248,7 @@ int stack_main(void *arg)
 	setBleUserConfig((icall_userCfg_t *)arg);
 
 	/* Establish OSAL for a stack service that requires accompanying
-   * messaging service */
+	 * messaging service */
 	if (ICall_enrollService(ICALL_SERVICE_CLASS_BLE_MSG,
 				(ICall_ServiceFunc)osal_service_entry,
 				&osal_entity,

@@ -159,13 +159,15 @@ void loop()
 			runningScan = false;
 			break;
 		}
-		SCmd.readSerial(); // We don't do much, just process serial commands
+		SCmd.readSerial(); // We don't do much, just process serial
+				   // commands
 		Serial.print("FREQ ");
 		Serial.println(radioCtx.freq, 2);
 
 		// start spectral scan
-		// number of samples: 2048 (fewer samples = better temporal resolution)
-		// Serial.print(F("[SX1262] Starting spectral scan ... "));
+		// number of samples: 2048 (fewer samples = better temporal
+		// resolution) Serial.print(F("[SX1262] Starting spectral scan
+		// ... "));
 		int state = radio.spectralScanStart(SAMPLE_RATE);
 		if (state == RADIOLIB_ERR_NONE) {
 			Serial.println(F("DONE"));
@@ -219,8 +221,8 @@ void cmdSetFreqStart()
 	if (arg != NULL) {
 		float tmpFreqS = atoi(arg);
 		if (tmpFreqS > radioCtx.freqEnd) {
-			Serial.println(F(
-				"Selected frequency is invalid for this module!"));
+			Serial.println(F("Selected frequency is invalid for "
+					 "this module!"));
 			return;
 		}
 		radioCtx.freqStart = tmpFreqS;
@@ -237,8 +239,8 @@ void cmdSetFreqEnd()
 	if (arg != NULL) {
 		float tmpFreqE = atoi(arg);
 		if (tmpFreqE < radioCtx.freqStart) {
-			Serial.println(F(
-				"Selected frequency is invalid for this module!"));
+			Serial.println(F("Selected frequency is invalid for "
+					 "this module!"));
 			return;
 		}
 		radioCtx.freqEnd = tmpFreqE;
@@ -291,6 +293,6 @@ void help()
 
 void unrecognized(const char *command)
 {
-	Serial.println(
-		"Command not found, type help to get the valid commands");
+	Serial.println("Command not found, type help to get the valid "
+		       "commands");
 }

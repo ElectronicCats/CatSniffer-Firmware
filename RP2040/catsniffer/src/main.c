@@ -54,10 +54,14 @@ static const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 static const struct gpio_dt_spec led2 = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
 
 // GPIO for cJTAG RFU
-static const struct gpio_dt_spec cjtag0 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag0), gpios);
-static const struct gpio_dt_spec cjtag1 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag1), gpios);
-static const struct gpio_dt_spec cjtag2 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag2), gpios);
-static const struct gpio_dt_spec cjtag3 = GPIO_DT_SPEC_GET(DT_ALIAS(cjtag3), gpios);
+static const struct gpio_dt_spec cjtag0 =
+	GPIO_DT_SPEC_GET(DT_ALIAS(cjtag0), gpios);
+static const struct gpio_dt_spec cjtag1 =
+	GPIO_DT_SPEC_GET(DT_ALIAS(cjtag1), gpios);
+static const struct gpio_dt_spec cjtag2 =
+	GPIO_DT_SPEC_GET(DT_ALIAS(cjtag2), gpios);
+static const struct gpio_dt_spec cjtag3 =
+	GPIO_DT_SPEC_GET(DT_ALIAS(cjtag3), gpios);
 
 // GPIO for RF switch
 static const struct gpio_dt_spec ctf1 = GPIO_DT_SPEC_GET(DT_ALIAS(ctf1), gpios);
@@ -138,15 +142,16 @@ static void catsniffer_usb_msg_cb(struct usbd_context *const ctx,
 }
 
 // Enable USB device
-static int enable_usb_device_next(void) {
-    catsniffer_usbd = usbd_init_device(catsniffer_usb_msg_cb);
-    if(catsniffer_usbd == NULL) {
-        return -ENODEV;
-    }
-    if(!usbd_can_detect_vbus(catsniffer_usbd)) {
-        return usbd_enable(catsniffer_usbd);
-    }
-    return 0;
+static int enable_usb_device_next(void)
+{
+	catsniffer_usbd = usbd_init_device(catsniffer_usb_msg_cb);
+	if (catsniffer_usbd == NULL) {
+		return -ENODEV;
+	}
+	if (!usbd_can_detect_vbus(catsniffer_usbd)) {
+		return usbd_enable(catsniffer_usbd);
+	}
+	return 0;
 }
 
 // CC1352 UART interrupt handler
@@ -177,17 +182,18 @@ static void cc1352_uart_interrupt_handler(const struct device *dev,
 }
 
 // CDC0 (CC1352) interrupt handler - PURE BRIDGE
-static void cdc0_interrupt_handler(const struct device* dev, void* user_data) {
-    while(uart_irq_update(dev) && uart_irq_is_pending(dev)) {
-        if(uart_irq_rx_ready(dev)) {
-            uint8_t buf[64];
-            int len = uart_fifo_read(dev, buf, sizeof(buf));
-            for(int i = 0; i < len; i++) {
-                uint8_t data = buf[i];
-                safe_ring_buf_put(&rb_usb_to_cc1352, &data, 1);
-                uart_irq_tx_enable(uart_cc1352);
-            }
-        }
+static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
+{
+	while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
+		if (uart_irq_rx_ready(dev)) {
+			uint8_t buf[64];
+			int len = uart_fifo_read(dev, buf, sizeof(buf));
+			for (int i = 0; i < len; i++) {
+				uint8_t data = buf[i];
+				safe_ring_buf_put(&rb_usb_to_cc1352, &data, 1);
+				uart_irq_tx_enable(uart_cc1352);
+			}
+		}
 
 		if (uart_irq_tx_ready(dev)) {
 			uint8_t buf[64];
@@ -253,16 +259,18 @@ static void cdc2_interrupt_handler(const struct device *dev, void *user_data)
 }
 
 // CDC1 (SX1262) interrupt handler
-static void cdc1_interrupt_handler(const struct device* dev, void* user_data) {
-    while(uart_irq_update(dev) && uart_irq_is_pending(dev)) {
-        if(uart_irq_rx_ready(dev)) {
-            uint8_t buf[64];
-            int len = uart_fifo_read(dev, buf, sizeof(buf));
-            if(len > 0) {
-                safe_ring_buf_put(&rb_usb_to_sx1262, buf, len);
-                k_sem_give(&lora_data_sem);  // Wake up LoRa thread
-            }
-        }
+static void cdc1_interrupt_handler(const struct device *dev, void *user_data)
+{
+	while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
+		if (uart_irq_rx_ready(dev)) {
+			uint8_t buf[64];
+			int len = uart_fifo_read(dev, buf, sizeof(buf));
+			if (len > 0) {
+				safe_ring_buf_put(&rb_usb_to_sx1262, buf, len);
+				k_sem_give(&lora_data_sem); // Wake up LoRa
+							    // thread
+			}
+		}
 
 		if (uart_irq_tx_ready(dev)) {
 			uint8_t buf[64];
@@ -457,8 +465,8 @@ int apply_lora_config(void)
 	const char *status_msg;
 
 	if (!catsniffer.lora_initialized) {
-		status_msg =
-			"Error: LoRa not initialized. Use TEST command first.\r\n";
+		status_msg = "Error: LoRa not initialized. Use TEST command "
+			     "first.\r\n";
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
 				  strlen(status_msg));
 		if (cdc2_dev)
@@ -688,7 +696,8 @@ static void lora_stop_rx(void)
 	// Pasar NULL y NULL cancela la recepción asíncrona en Zephyr
 	lora_recv_async(lora_dev, NULL, NULL);
 
-	// IMPORTANTE: Dar un pequeño respiro al bus SPI/Driver para cambiar de estado
+	// IMPORTANTE: Dar un pequeño respiro al bus SPI/Driver para cambiar de
+	// estado
 	k_sleep(K_MSEC(5));
 }
 
@@ -737,54 +746,66 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 	char command_buffer[128];
 	size_t cmd_len = 0;
 
-    while(1) {
-        if(k_sem_take(&lora_data_sem, K_MSEC(100)) == 0) {
-            // Skip operations if config lock is active
-            if(catsniffer.lora_config_lock) {
-                k_msleep(10);
-                continue;
-            }
+	while (1) {
+		if (k_sem_take(&lora_data_sem, K_MSEC(100)) == 0) {
+			// Skip operations if config lock is active
+			if (catsniffer.lora_config_lock) {
+				k_msleep(10);
+				continue;
+			}
 
-            // Start async rx
-            lora_start_rx_async();
-            if(catsniffer.lora_mode == LORA_MODE_COMMAND) {
-                // COMMAND MODE: Line-buffered text commands
-                uint8_t usb_buf[64];
-                int usb_len = safe_ring_buf_get(&rb_usb_to_sx1262, usb_buf, sizeof(usb_buf));
+			// Start async rx
+			lora_start_rx_async();
+			if (catsniffer.lora_mode == LORA_MODE_COMMAND) {
+				// COMMAND MODE: Line-buffered text commands
+				uint8_t usb_buf[64];
+				int usb_len = safe_ring_buf_get(
+					&rb_usb_to_sx1262, usb_buf,
+					sizeof(usb_buf));
 
-                if(usb_len > 0) {
-                    for(int i = 0; i < usb_len; i++) {
-                        char c = usb_buf[i];
+				if (usb_len > 0) {
+					for (int i = 0; i < usb_len; i++) {
+						char c = usb_buf[i];
 
-                        if(c == '\n' || c == '\r') {
-                            if(cmd_len > 0) {
-                                command_buffer[cmd_len] = '\0';
-                                process_lora_command(command_buffer);
-                                cmd_len = 0;
-                            }
-                        } else if(cmd_len < sizeof(command_buffer) - 1) {
-                            command_buffer[cmd_len++] = c;
-                        }
-                    }
-                } 
-            } 
-            else {
-                // STREAM MODE: Raw binary TX/RX
-                uint8_t tx_buffer[255];
-                int tx_len = safe_ring_buf_get(&rb_usb_to_sx1262, tx_buffer, sizeof(tx_buffer));
+						if (c == '\n' || c == '\r') {
+							if (cmd_len > 0) {
+								command_buffer
+									[cmd_len] =
+										'\0';
+								process_lora_command(
+									command_buffer);
+								cmd_len = 0;
+							}
+						} else if (cmd_len <
+							   sizeof(command_buffer) -
+								   1) {
+							command_buffer[cmd_len++] =
+								c;
+						}
+					}
+				}
+			} else {
+				// STREAM MODE: Raw binary TX/RX
+				uint8_t tx_buffer[255];
+				int tx_len = safe_ring_buf_get(
+					&rb_usb_to_sx1262, tx_buffer,
+					sizeof(tx_buffer));
 
-                if(tx_len > 0 && catsniffer.lora_initialized && !catsniffer.lora_config_lock) {
-                    // Stop any Rx
-                    lora_stop_rx();
-                    // Switch to TX mode, send, then switch back to RX mode
-                    lora_set_tx_mode();
-                    lora_send(lora_dev, tx_buffer, tx_len);
-                    lora_start_rx_async(); // Back to RX mode
-                }
-            }
-        }
-        //k_msleep(10);
-    }
+				if (tx_len > 0 && catsniffer.lora_initialized &&
+				    !catsniffer.lora_config_lock) {
+					// Stop any Rx
+					lora_stop_rx();
+					// Switch to TX mode, send, then switch
+					// back to RX mode
+					lora_set_tx_mode();
+					lora_send(lora_dev, tx_buffer, tx_len);
+					lora_start_rx_async(); // Back to RX
+							       // mode
+				}
+			}
+		}
+		// k_msleep(10);
+	}
 }
 
 int main(void)
@@ -861,13 +882,19 @@ int main(void)
 	}
 	gpio_pin_set_dt(&led0, 1);
 
-    // Initialize ALL ring buffers
-    ring_buf_init(&rb_cc1352_to_usb, sizeof(ring_cc1352_to_usb), ring_cc1352_to_usb);
-    ring_buf_init(&rb_usb_to_cc1352, sizeof(ring_usb_to_cc1352), ring_usb_to_cc1352);
-    ring_buf_init(&rb_sx1262_to_usb, sizeof(ring_sx1262_to_usb), ring_sx1262_to_usb);
-    ring_buf_init(&rb_usb_to_sx1262, sizeof(ring_usb_to_sx1262), ring_usb_to_sx1262);
-    ring_buf_init(&rb_config_to_usb, sizeof(ring_config_to_usb), ring_config_to_usb);
-    ring_buf_init(&rb_usb_to_config, sizeof(ring_usb_to_config), ring_usb_to_config);
+	// Initialize ALL ring buffers
+	ring_buf_init(&rb_cc1352_to_usb, sizeof(ring_cc1352_to_usb),
+		      ring_cc1352_to_usb);
+	ring_buf_init(&rb_usb_to_cc1352, sizeof(ring_usb_to_cc1352),
+		      ring_usb_to_cc1352);
+	ring_buf_init(&rb_sx1262_to_usb, sizeof(ring_sx1262_to_usb),
+		      ring_sx1262_to_usb);
+	ring_buf_init(&rb_usb_to_sx1262, sizeof(ring_usb_to_sx1262),
+		      ring_usb_to_sx1262);
+	ring_buf_init(&rb_config_to_usb, sizeof(ring_config_to_usb),
+		      ring_config_to_usb);
+	ring_buf_init(&rb_usb_to_config, sizeof(ring_usb_to_config),
+		      ring_usb_to_config);
 
 	// Configure UART
 	struct uart_config uart_cfg;
@@ -927,18 +954,10 @@ int main(void)
 			uart_irq_tx_enable(cdc2_dev);
 	}
 
-    // Start LoRa thread
-    k_thread_create(
-        &lora_thread,
-        lora_thread_stack,
-        LORA_THREAD_STACK_SIZE,
-        lora_thread_func,
-        NULL,
-        NULL,
-        NULL,
-        LORA_THREAD_PRIORITY,
-        0,
-        K_NO_WAIT);
+	// Start LoRa thread
+	k_thread_create(&lora_thread, lora_thread_stack, LORA_THREAD_STACK_SIZE,
+			lora_thread_func, NULL, NULL, NULL,
+			LORA_THREAD_PRIORITY, 0, K_NO_WAIT);
 
 	// Main loop with LED animation
 	while (1) {
@@ -946,7 +965,7 @@ int main(void)
 		if (current_time - catsniffer.previous_millis >
 		    catsniffer.led_interval) {
 			catsniffer.previous_millis = current_time;
-			//Check catsniffer mode
+			// Check catsniffer mode
 			if (catsniffer.mode) {
 				static int led_index = 0;
 				// Cycle through LEDs

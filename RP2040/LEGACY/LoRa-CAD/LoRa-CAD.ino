@@ -99,16 +99,17 @@ void help()
 	Serial.println(FIRMWARE_VERSION);
 	Serial.println("Available commands are:");
 	Serial.print("set_freq\t- ");
-	Serial.println(
-		"Set the frequency in range of 150/960 MHz: Default 915");
+	Serial.println("Set the frequency in range of 150/960 MHz: Default "
+		       "915");
 	Serial.print("set_efreq\t- ");
-	Serial.println(
-		"Set the end frequency in range of 150/960 MHz: Default 915");
+	Serial.println("Set the end frequency in range of 150/960 MHz: Default "
+		       "915");
 	Serial.print("set_sf\t\t- ");
 	Serial.println("Set the spread factor. Default: 7");
 	Serial.print("set_bw\t\t- ");
-	Serial.println(
-		"Set the bandwith value. Options: (7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125, 250, 500) kHz: Default 125");
+	Serial.println("Set the bandwith value. Options: (7.8, 10.4, 15.6, "
+		       "20.8, 31.25, 41.7, 62.5, 125, 250, 500) kHz: Default "
+		       "125");
 	Serial.print("set_cr\t\t- ");
 	Serial.println("Set the coding rate. Default: 5");
 	Serial.print("set_sw\t\t- ");
@@ -117,8 +118,8 @@ void help()
 	Serial.println("Set the preamble length: Default: 10");
 
 	Serial.print("set_step\t- ");
-	Serial.println(
-		"Set the step increment for frequency range; Default 0.1");
+	Serial.println("Set the step increment for frequency range; Default "
+		       "0.1");
 	Serial.print("set_fixed\t- ");
 	Serial.println("Set fixed frequency CAD; Default");
 	Serial.print("set_range\t- ");
@@ -211,8 +212,8 @@ void cmdSetFrequency()
 		float tmp_value = atof(arg);
 		if (radio.setFrequency(tmp_value) ==
 		    RADIOLIB_ERR_INVALID_FREQUENCY) {
-			Serial.println(F(
-				"Selected frequency is invalid for this module!"));
+			Serial.println(F("Selected frequency is invalid for "
+					 "this module!"));
 			return;
 		}
 		radioCtx.start = tmp_value;
@@ -230,8 +231,8 @@ void cmdSetStep()
 	if (arg != NULL) {
 		float tmp_value = atof(arg);
 		if (tmp_value < 0 || tmp_value > 10) {
-			Serial.println(
-				"Step out of parameters, please use a value between 0 and 10 MHz");
+			Serial.println("Step out of parameters, please use a "
+				       "value between 0 and 10 MHz");
 			return;
 		}
 		radioCtx.step = tmp_value;
@@ -247,13 +248,13 @@ void cmdSetFrequencyEnd()
 	if (arg != NULL) {
 		float tmp_value = atof(arg);
 		if (tmp_value < 150 || tmp_value > 960) {
-			Serial.println(
-				"Frequency out of parameters, please use a value between 150 and 960 MHz");
+			Serial.println("Frequency out of parameters, please "
+				       "use a value between 150 and 960 MHz");
 			return;
 		}
 		if (tmp_value < radioCtx.frequency) {
-			Serial.print(
-				"Frequency out of parameters, please use a value greater thatn: ");
+			Serial.print("Frequency out of parameters, please use "
+				     "a value greater thatn: ");
 			Serial.println(String(radioCtx.frequency) + " MHz");
 			return;
 		}
@@ -272,8 +273,8 @@ void cmdSetCodingRate()
 		int tmp_value = atoi(arg);
 		if (radio.setCodingRate(tmp_value) ==
 		    RADIOLIB_ERR_INVALID_CODING_RATE) {
-			Serial.println(F(
-				"Selected coding rate is invalid for this module!"));
+			Serial.println(F("Selected coding rate is invalid for "
+					 "this module!"));
 			return;
 		}
 		Serial.println("Coding Rate set to " + String(tmp_value));
@@ -289,8 +290,8 @@ void cmdSetSpreadFactor()
 		int tmp_value = atoi(arg);
 		if (radio.setSpreadingFactor(tmp_value) ==
 		    RADIOLIB_ERR_INVALID_SPREADING_FACTOR) {
-			Serial.println(F(
-				"Selected spread factor is invalid for this module!"));
+			Serial.println(F("Selected spread factor is invalid "
+					 "for this module!"));
 			return;
 		}
 		Serial.println("Spreadfactor set to " + String(tmp_value));
@@ -306,8 +307,8 @@ void cmdSetBandWidth()
 		float tmp_value = atof(arg);
 		if (radio.setBandwidth(tmp_value) ==
 		    RADIOLIB_ERR_INVALID_BANDWIDTH) {
-			Serial.println(F(
-				"Selected bandwidth is invalid for this module!"));
+			Serial.println(F("Selected bandwidth is invalid for "
+					 "this module!"));
 			return;
 		}
 		Serial.println("Bandwidth set to " + String(tmp_value) +
@@ -324,8 +325,8 @@ void cmdSetPreambleLength()
 		int tmp_value = atoi(arg);
 		if (radio.setPreambleLength(tmp_value) ==
 		    RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH) {
-			Serial.println(F(
-				"Selected preamble length is invalid for this module!"));
+			Serial.println(F("Selected preamble length is invalid "
+					 "for this module!"));
 			return;
 		}
 		Serial.println("Preamble Length set to " + String(tmp_value));
@@ -350,8 +351,8 @@ void cmdSetSyncWord()
 			}
 			radioCtx.syncWord = data;
 		} else {
-			Serial.println(F(
-				"Invalid sync word. Use a hexadecimal byte (e.g. 2B or 0x2B)"));
+			Serial.println(F("Invalid sync word. Use a hexadecimal "
+					 "byte (e.g. 2B or 0x2B)"));
 			return;
 		}
 	}
@@ -410,8 +411,8 @@ void cmdGetConfiguration()
 
 void unrecognized(const char *command)
 {
-	Serial.println(
-		"Command not found, type help to get the valid commands");
+	Serial.println("Command not found, type help to get the valid "
+		       "commands");
 }
 
 static void showPacketDetails()
@@ -512,8 +513,8 @@ void loop()
 			if (state == RADIOLIB_LORA_DETECTED) {
 				state = radio.startReceive();
 				if (state != RADIOLIB_ERR_NONE) {
-					Serial.print(
-						F("[SX1262] Failed, code "));
+					Serial.print(F("[SX1262] Failed, "
+						       "code "));
 					Serial.println(state);
 				}
 				// set the flag for ongoing reception

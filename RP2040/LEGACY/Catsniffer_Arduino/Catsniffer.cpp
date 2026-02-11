@@ -95,12 +95,12 @@ void catsnifferRFChangeBand(catsniffer_t *cs, catsniffer_band_t newBand)
 		digitalWrite(CTF2, HIGH);
 		digitalWrite(CTF3, LOW);
 		break;
-	case SUBGIG_1: //Sub-ghz CC1352
+	case SUBGIG_1: // Sub-ghz CC1352
 		digitalWrite(CTF1, LOW);
 		digitalWrite(CTF2, LOW);
 		digitalWrite(CTF3, HIGH);
 		break;
-	case SUBGIG_2: //LoRa
+	case SUBGIG_2: // LoRa
 		digitalWrite(CTF1, HIGH);
 		digitalWrite(CTF2, LOW);
 		digitalWrite(CTF3, LOW);
@@ -245,7 +245,8 @@ void catsnifferPassCommandBegin(void)
 	}
 
 	if (cs_context.mode == PASSTRHOUGH) {
-		//Switch Radio for 2.4Ghz BLE by default can be changed on the fly
+		// Switch Radio for 2.4Ghz BLE by default can be changed on the
+		// fly
 		catsnifferRFChangeBand(&cs_context, GIG);
 	}
 
