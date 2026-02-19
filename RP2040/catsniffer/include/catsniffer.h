@@ -29,19 +29,19 @@
 #define MAIN_THREAD_PRIORITY K_PRIO_COOP(7)
 
 // Helper macro to simplify GPIO setup
-#define INIT_GPIO(name, flags)
-const struct gpio_dt_spec name =
-	GPIO_DT_SPEC_GET_OR(DT_ALIAS(name), gpios, { 0 });
-do {
-	if (!device_is_ready(name.port)) {
-		printk("Error: " #name " device not ready\n");
-		return 1;
-	}
-	gpio_pin_configure_dt(&name, flags);
+#define INIT_GPIO(name, flags) \
+const struct gpio_dt_spec name = \
+	GPIO_DT_SPEC_GET_OR(DT_ALIAS(name), gpios, { 0 }); \
+do { \
+	if (!device_is_ready(name.port)) { \
+		printk("Error: " #name " device not ready\n"); \
+		return 1; \
+	} \
+	gpio_pin_configure_dt(&name, flags); \
 } while (0)
 
-	// Mode definitions
-	enum MODE {
+// Mode definitions
+enum MODE {
 	PASSTHROUGH = 0, // CC1352 passthrough @ 921600 baud
 	BOOT = 1,	 // CC1352 bootloader @ 500000 baud
 };

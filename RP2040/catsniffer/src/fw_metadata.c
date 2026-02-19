@@ -2,7 +2,7 @@
 
 #include <errno.h>
 #include <string.h>
-#include <zephyr/fs/nvs.h>
+#include <zephyr/kvss/nvs.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/sys/util.h>
 
