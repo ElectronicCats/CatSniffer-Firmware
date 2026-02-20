@@ -42,6 +42,7 @@ static void cmd_band2(char *args);
 static void cmd_band3(char *args);
 static void cmd_reboot(char *args);
 static void cmd_status(char *args);
+static void cmd_fw_version(char *args);
 static void cmd_lora_freq(char *args);
 static void cmd_lora_sf(char *args);
 static void cmd_lora_bw(char *args);
@@ -54,6 +55,18 @@ static void cmd_lora_iq(char *args);
 static void cmd_lora_config(char *args);
 static void cmd_lora_apply(char *args);
 static void cmd_cc1352_fw_id(char *args);
+static void cmd_fsk_freq(char *args);
+static void cmd_fsk_bitrate(char *args);
+static void cmd_fsk_fdev(char *args);
+static void cmd_fsk_bw(char *args);
+static void cmd_fsk_power(char *args);
+static void cmd_fsk_preamble(char *args);
+static void cmd_fsk_syncword(char *args);
+static void cmd_fsk_crc(char *args);
+static void cmd_fsk_config(char *args);
+static void cmd_fsk_apply(char *args);
+static void cmd_modulation(char *args);
+static void cmd_radio(char *args);
 
 // Command table
 static const shell_cmd_t commands[] = {
@@ -65,6 +78,7 @@ static const shell_cmd_t commands[] = {
 	{ "band3", cmd_band3, "LoRa band", false },
 	{ "reboot", cmd_reboot, "RP2040 USB bootloader", false },
 	{ "status", cmd_status, "Device status", false },
+	{ "fw_version", cmd_fw_version, "Show firmware build version", false },
 	{ "lora_freq", cmd_lora_freq, "Set frequency (Hz)", true },
 	{ "lora_sf", cmd_lora_sf, "Set spreading factor", true },
 	{ "lora_bw", cmd_lora_bw, "Set bandwidth (kHz)", true },
@@ -78,6 +92,19 @@ static const shell_cmd_t commands[] = {
 	{ "lora_apply", cmd_lora_apply, "Apply pending config", false },
 	{ "cc1352_fw_id", cmd_cc1352_fw_id, "set|get|clear|list CC1352 FW ID",
 	  true },
+	/* FSK/GFSK Commands */
+	{ "fsk_freq", cmd_fsk_freq, "Set FSK frequency (Hz)", true },
+	{ "fsk_bitrate", cmd_fsk_bitrate, "Set FSK bitrate (bps)", true },
+	{ "fsk_fdev", cmd_fsk_fdev, "Set FSK freq deviation (Hz)", true },
+	{ "fsk_bw", cmd_fsk_bw, "Set FSK RX bandwidth", true },
+	{ "fsk_power", cmd_fsk_power, "Set FSK TX power (dBm)", true },
+	{ "fsk_preamble", cmd_fsk_preamble, "Set FSK preamble len", true },
+	{ "fsk_syncword", cmd_fsk_syncword, "Set FSK sync word (hex)", true },
+	{ "fsk_crc", cmd_fsk_crc, "Enable/disable CRC", true },
+	{ "fsk_config", cmd_fsk_config, "Show FSK config", false },
+	{ "fsk_apply", cmd_fsk_apply, "Apply FSK config", false },
+	{ "modulation", cmd_modulation, "lora|fsk modulation", true },
+	{ "radio", cmd_radio, "Forward radio cmd (TEST/FSKRX/FSKTX/TX)", true },
 	{ NULL, NULL, NULL, false }
 };
 
@@ -86,8 +113,8 @@ static void cmd_help(char *args)
 {
 	shell_reply("Commands:\r\n");
 	for (const shell_cmd_t *cmd = commands; cmd->name != NULL; cmd++) {
-		char buf[64];
-		snprintf(buf, sizeof(buf), "  %-8s - %s\r\n", cmd->name,
+		char buf[80];
+		snprintf(buf, sizeof(buf), "  %-14s - %s\r\n", cmd->name,
 			 cmd->help);
 		shell_reply(buf);
 	}
@@ -154,10 +181,21 @@ static void cmd_status(char *args)
 									"m";
 	}
 	snprintf(buf, sizeof(buf),
-		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s, CC1352 FW: %s "
+		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s, FW: %s, CC1352 FW: %s "
 		 "(%s)\r\n",
 		 catsniffer.mode, catsniffer.band, lora_status, mode_str,
-		 fw_id_str, fw_type);
+		 CATSNIFFER_FW_VERSION, fw_id_str, fw_type);
+	shell_reply(buf);
+}
+
+static void cmd_fw_version(char *args)
+{
+	char buf[320];
+	snprintf(buf, sizeof(buf),
+		 "FW: %s\r\nGit: %s (%s)\r\nBuilt: %s\r\nCompiler: %s %s\r\n",
+		 CATSNIFFER_FW_VERSION, CATSNIFFER_GIT_SHA, CATSNIFFER_GIT_DIRTY,
+		 CATSNIFFER_BUILD_TIME_UTC, CATSNIFFER_COMPILER_ID,
+		 CATSNIFFER_COMPILER_VERSION);
 	shell_reply(buf);
 }
 
@@ -340,7 +378,7 @@ static void cmd_lora_bw(char *args)
 	}
 
 	int bw = atoi(args);
-	uint8_t bw_enum;
+	enum lora_signal_bandwidth bw_enum;
 
 	switch (bw) {
 	case 125:
@@ -600,6 +638,399 @@ static void cmd_lora_apply(char *args)
 		catsniffer.lora_config.config_pending = false;
 		shell_reply("LoRa configuration applied successfully\r\n");
 	}
+}
+
+/* ============================================ */
+/* FSK/GFSK Command Handlers                    */
+/* ============================================ */
+
+static void cmd_fsk_freq(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_freq <Hz>\r\n");
+		return;
+	}
+
+	uint32_t freq = (uint32_t)atoi(args);
+	if (freq < 137000000 || freq > 1020000000) {
+		shell_reply("Error: Frequency must be 137-1020 MHz\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.frequency = freq;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK Frequency set to %u Hz (pending)\r\n", freq);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_bitrate(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_bitrate <bps>\r\n");
+		return;
+	}
+
+	uint32_t bitrate = (uint32_t)atoi(args);
+	if (bitrate < 600 || bitrate > 300000) {
+		shell_reply("Error: Bitrate must be 600-300000 bps\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.bitrate = bitrate;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK Bitrate set to %u bps (pending)\r\n", bitrate);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_fdev(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_fdev <Hz>\r\n");
+		return;
+	}
+
+	uint32_t fdev = (uint32_t)atoi(args);
+	if (fdev < 600 || fdev > 200000) {
+		shell_reply("Error: Freq deviation must be 600-200000 Hz\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.fdev = fdev;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK Freq deviation set to %u Hz (pending)\r\n", fdev);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_bw(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_bw <bandwidth>\r\n");
+		shell_reply("  4.8, 5.8, 7.3, 9.7, 11.7, 14.6, 19.5, 23.4,\r\n");
+		shell_reply("  29.3, 39.0, 46.9, 58.6, 78.2, 93.8, 117.3,\r\n");
+		shell_reply("  156.2, 187.2, 234.3, 312.0, 373.6, 467.0 kHz\r\n");
+		return;
+	}
+
+	/* Map common bandwidths to register values */
+	uint8_t bw_reg;
+	float bw_khz = atof(args);
+
+	/* Use predefined constants from sx126x_regs.h */
+	if (bw_khz <= 5)
+		bw_reg = 0x1F; /* 4.8 kHz */
+	else if (bw_khz <= 6)
+		bw_reg = 0x17; /* 5.8 kHz */
+	else if (bw_khz <= 8)
+		bw_reg = 0x0F; /* 7.3 kHz */
+	else if (bw_khz <= 10)
+		bw_reg = 0x1E; /* 9.7 kHz */
+	else if (bw_khz <= 12)
+		bw_reg = 0x16; /* 11.7 kHz */
+	else if (bw_khz <= 15)
+		bw_reg = 0x0E; /* 14.6 kHz */
+	else if (bw_khz <= 20)
+		bw_reg = 0x1D; /* 19.5 kHz */
+	else if (bw_khz <= 24)
+		bw_reg = 0x15; /* 23.4 kHz */
+	else if (bw_khz <= 30)
+		bw_reg = 0x0D; /* 29.3 kHz */
+	else if (bw_khz <= 40)
+		bw_reg = 0x1C; /* 39.0 kHz */
+	else if (bw_khz <= 50)
+		bw_reg = 0x14; /* 46.9 kHz */
+	else if (bw_khz <= 60)
+		bw_reg = 0x0C; /* 58.6 kHz */
+	else if (bw_khz <= 80)
+		bw_reg = 0x1B; /* 78.2 kHz */
+	else if (bw_khz <= 100)
+		bw_reg = 0x13; /* 93.8 kHz */
+	else if (bw_khz <= 120)
+		bw_reg = 0x0B; /* 117.3 kHz */
+	else if (bw_khz <= 160)
+		bw_reg = 0x1A; /* 156.2 kHz */
+	else if (bw_khz <= 190)
+		bw_reg = 0x12; /* 187.2 kHz */
+	else if (bw_khz <= 240)
+		bw_reg = 0x0A; /* 234.3 kHz */
+	else if (bw_khz <= 320)
+		bw_reg = 0x19; /* 312.0 kHz */
+	else if (bw_khz <= 380)
+		bw_reg = 0x11; /* 373.6 kHz */
+	else
+		bw_reg = 0x09; /* 467.0 kHz */
+
+	catsniffer.fsk_config.bandwidth = bw_reg;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK RX bandwidth set (reg=0x%02x) (pending)\r\n", bw_reg);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_power(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_power <-9 to 22>\r\n");
+		return;
+	}
+
+	int power = atoi(args);
+	if (power < -9 || power > 22) {
+		shell_reply("Error: TX power must be -9 to 22 dBm\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.tx_power = (int8_t)power;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK TX Power set to %d dBm (pending)\r\n", power);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_preamble(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_preamble <bytes>\r\n");
+		return;
+	}
+
+	int preamble = atoi(args);
+	if (preamble < 0 || preamble > 65535) {
+		shell_reply("Error: Preamble must be 0-65535 bytes\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.preamble_len = (uint16_t)preamble;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK Preamble set to %d bytes (pending)\r\n", preamble);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_syncword(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_syncword <hex_bytes>\r\n");
+		shell_reply("  Example: fsk_syncword 12AD\r\n");
+		return;
+	}
+
+	/* Parse hex string to bytes */
+	uint8_t sync_word[8] = {0};
+	uint8_t len = 0;
+	char *ptr = args;
+
+	while (*ptr && len < 8) {
+		uint8_t byte = 0;
+		for (int i = 0; i < 2 && *ptr; i++) {
+			byte <<= 4;
+			if (*ptr >= '0' && *ptr <= '9')
+				byte |= (*ptr - '0');
+			else if (*ptr >= 'A' && *ptr <= 'F')
+				byte |= (*ptr - 'A' + 10);
+			else if (*ptr >= 'a' && *ptr <= 'f')
+				byte |= (*ptr - 'a' + 10);
+			else
+				break;
+			ptr++;
+		}
+		sync_word[len++] = byte;
+	}
+
+	if (len == 0) {
+		shell_reply("Error: Invalid hex sync word\r\n");
+		return;
+	}
+
+	memcpy(catsniffer.fsk_config.sync_word, sync_word, len);
+	catsniffer.fsk_config.sync_word_len = len;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK Sync word set to %d bytes (pending)\r\n", len);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_crc(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_crc <on|off>\r\n");
+		return;
+	}
+
+	if (strncmp(args, "on", 2) == 0) {
+		catsniffer.fsk_config.crc_on = true;
+		catsniffer.fsk_config.config_pending = true;
+		shell_reply("FSK CRC enabled (pending)\r\n");
+	} else if (strncmp(args, "off", 3) == 0) {
+		catsniffer.fsk_config.crc_on = false;
+		catsniffer.fsk_config.config_pending = true;
+		shell_reply("FSK CRC disabled (pending)\r\n");
+	} else {
+		shell_reply("Error: Must be 'on' or 'off'\r\n");
+	}
+}
+
+static void cmd_fsk_config(char *args)
+{
+	char buf[512];
+	const char *pending_str =
+		catsniffer.fsk_config.config_pending ? " (pending apply)" : "";
+	const char *crc_str = catsniffer.fsk_config.crc_on ? "ON" : "OFF";
+
+	/* Build sync word hex string */
+	char sync_str[24] = {0};
+	for (int i = 0; i < catsniffer.fsk_config.sync_word_len; i++) {
+		char byte_str[4];
+		snprintf(byte_str, sizeof(byte_str), "%02X",
+			 catsniffer.fsk_config.sync_word[i]);
+		strcat(sync_str, byte_str);
+	}
+
+	snprintf(buf, sizeof(buf),
+		 "FSK/GFSK Configuration:%s\r\n"
+		 "  Frequency: %u Hz\r\n"
+		 "  Bitrate: %u bps\r\n"
+		 "  Freq Deviation: %u Hz\r\n"
+		 "  RX Bandwidth: 0x%02X\r\n"
+		 "  TX Power: %d dBm\r\n"
+		 "  Preamble Length: %u bytes\r\n"
+		 "  Sync Word: %s (%d bytes)\r\n"
+		 "  CRC: %s\r\n"
+		 "  Current Modulation: %s\r\n",
+		 pending_str,
+		 catsniffer.fsk_config.frequency,
+		 catsniffer.fsk_config.bitrate,
+		 catsniffer.fsk_config.fdev,
+		 catsniffer.fsk_config.bandwidth,
+		 catsniffer.fsk_config.tx_power,
+		 catsniffer.fsk_config.preamble_len,
+		 sync_str, catsniffer.fsk_config.sync_word_len,
+		 crc_str,
+		 catsniffer.current_modulation == FSK_MOD_FSK ? "FSK" : "LoRa");
+	shell_reply(buf);
+}
+
+static void cmd_fsk_apply(char *args)
+{
+	if (!catsniffer.fsk_config.config_pending) {
+		shell_reply("No pending FSK configuration changes\r\n");
+		return;
+	}
+
+	int ret = apply_fsk_config();
+	if (ret < 0) {
+		char buf[64];
+		snprintf(buf, sizeof(buf),
+			 "Error applying FSK configuration: %d\r\n", ret);
+		shell_reply(buf);
+	} else {
+		catsniffer.fsk_config.config_pending = false;
+		shell_reply("FSK configuration applied successfully\r\n");
+	}
+}
+
+static void cmd_modulation(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		char buf[64];
+		shell_reply("Usage: modulation <lora|fsk>\r\n");
+		snprintf(buf, sizeof(buf), "  Current: %s\r\n",
+			 catsniffer.current_modulation == FSK_MOD_FSK ?
+			 "FSK" : "LoRa");
+		shell_reply(buf);
+		return;
+	}
+
+	int ret;
+	if (strncmp(args, "lora", 4) == 0) {
+		ret = switch_to_lora();
+		if (ret < 0) {
+			shell_reply("Error switching to LoRa\r\n");
+		} else {
+			shell_reply("Switched to LoRa modulation\r\n");
+		}
+	} else if (strncmp(args, "fsk", 3) == 0) {
+		ret = switch_to_fsk();
+		if (ret < 0) {
+			shell_reply("Error switching to FSK\r\n");
+		} else {
+			shell_reply("Switched to FSK modulation\r\n");
+		}
+	} else {
+		shell_reply("Error: Must be 'lora' or 'fsk'\r\n");
+	}
+}
+
+static void cmd_radio(char *args)
+{
+	char forwarded[128];
+
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: radio <TEST|FSKRX|FSKTEST|FSKTX HEX|TX HEX>\r\n");
+		return;
+	}
+
+	snprintf(forwarded, sizeof(forwarded), "%s", args);
+	process_lora_command(forwarded);
 }
 
 // Main command processor
