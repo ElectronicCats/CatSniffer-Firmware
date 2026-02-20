@@ -688,6 +688,7 @@ int apply_fsk_config(void)
 				     catsniffer.fsk_config.frequency,
 				     catsniffer.fsk_config.bitrate,
 				     catsniffer.fsk_config.fdev,
+				     catsniffer.fsk_config.shaping,
 				     catsniffer.fsk_config.bandwidth,
 				     catsniffer.fsk_config.tx_power);
 	if (ret < 0) {
@@ -1375,6 +1376,7 @@ int main(void)
 	catsniffer.fsk_config.frequency = 915000000;
 	catsniffer.fsk_config.bitrate = 50000;
 	catsniffer.fsk_config.fdev = 25000;
+	catsniffer.fsk_config.shaping = FSK_BT_05;
 	catsniffer.fsk_config.bandwidth = 0x12; /* 187.2 kHz */
 	catsniffer.fsk_config.tx_power = 14;
 	catsniffer.fsk_config.preamble_len = 8;

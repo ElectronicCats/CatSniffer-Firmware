@@ -80,11 +80,19 @@ enum FSK_MODULATION {
 	FSK_MOD_FSK = 1,	// FSK/GFSK modulation
 };
 
+/* SX126x GFSK shaping values */
+#define FSK_BT_OFF 0x00
+#define FSK_BT_03 0x08
+#define FSK_BT_05 0x09
+#define FSK_BT_07 0x0A
+#define FSK_BT_10 0x0B
+
 // FSK configuration structure
 typedef struct {
 	uint32_t frequency;	  // Hz (default: 915000000)
 	uint32_t bitrate;	  // Bit rate in bps (default: 50000)
 	uint32_t fdev;		  // Frequency deviation in Hz (default: 25000)
+	uint8_t shaping;	  // Gaussian shaping BT (default: 0.5)
 	uint8_t bandwidth;	  // RX bandwidth (use SX126X_FSK_BW_* constants)
 	int8_t tx_power;	  // -9 to 22 dBm (default: 14)
 	uint16_t preamble_len;	  // Preamble length in bytes (default: 5)

@@ -64,6 +64,10 @@ static void cmd_fsk_power(char *args);
 static void cmd_fsk_preamble(char *args);
 static void cmd_fsk_syncword(char *args);
 static void cmd_fsk_crc(char *args);
+static void cmd_fsk_whitening(char *args);
+static void cmd_fsk_pktlen(char *args);
+static void cmd_fsk_payload(char *args);
+static void cmd_fsk_bt(char *args);
 static void cmd_fsk_config(char *args);
 static void cmd_fsk_apply(char *args);
 static void cmd_modulation(char *args);
@@ -102,6 +106,10 @@ static const shell_cmd_t commands[] = {
 	{ "fsk_preamble", cmd_fsk_preamble, "Set FSK preamble len", true },
 	{ "fsk_syncword", cmd_fsk_syncword, "Set FSK sync word (hex)", true },
 	{ "fsk_crc", cmd_fsk_crc, "Enable/disable CRC", true },
+	{ "fsk_whitening", cmd_fsk_whitening, "Enable/disable whitening", true },
+	{ "fsk_pktlen", cmd_fsk_pktlen, "fixed|variable packet length", true },
+	{ "fsk_payload", cmd_fsk_payload, "Set payload/max len (1-255)", true },
+	{ "fsk_bt", cmd_fsk_bt, "Set GFSK BT (off|0.3|0.5|0.7|1.0)", true },
 	{ "fsk_config", cmd_fsk_config, "Show FSK config", false },
 	{ "fsk_apply", cmd_fsk_apply, "Apply FSK config", false },
 	{ "modulation", cmd_modulation, "lora|fsk modulation", true },
@@ -922,12 +930,148 @@ static void cmd_fsk_crc(char *args)
 	}
 }
 
+static void cmd_fsk_whitening(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_whitening <on|off>\r\n");
+		return;
+	}
+
+	if (strncmp(args, "on", 2) == 0) {
+		catsniffer.fsk_config.whitening = true;
+		catsniffer.fsk_config.config_pending = true;
+		shell_reply("FSK whitening enabled (pending)\r\n");
+	} else if (strncmp(args, "off", 3) == 0) {
+		catsniffer.fsk_config.whitening = false;
+		catsniffer.fsk_config.config_pending = true;
+		shell_reply("FSK whitening disabled (pending)\r\n");
+	} else {
+		shell_reply("Error: Must be 'on' or 'off'\r\n");
+	}
+}
+
+static void cmd_fsk_pktlen(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_pktlen <fixed|variable>\r\n");
+		return;
+	}
+
+	if (strncmp(args, "fixed", 5) == 0) {
+		catsniffer.fsk_config.fixed_length = true;
+		catsniffer.fsk_config.config_pending = true;
+		shell_reply("FSK packet mode set to FIXED (pending)\r\n");
+	} else if (strncmp(args, "variable", 8) == 0) {
+		catsniffer.fsk_config.fixed_length = false;
+		catsniffer.fsk_config.config_pending = true;
+		shell_reply("FSK packet mode set to VARIABLE (pending)\r\n");
+	} else {
+		shell_reply("Error: Must be 'fixed' or 'variable'\r\n");
+	}
+}
+
+static void cmd_fsk_payload(char *args)
+{
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_payload <1-255>\r\n");
+		return;
+	}
+
+	int payload = atoi(args);
+	if (payload < 1 || payload > 255) {
+		shell_reply("Error: Payload length must be 1-255\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.payload_len = (uint8_t)payload;
+	catsniffer.fsk_config.config_pending = true;
+
+	char buf[64];
+	snprintf(buf, sizeof(buf), "FSK payload length set to %d (pending)\r\n",
+		 payload);
+	shell_reply(buf);
+}
+
+static void cmd_fsk_bt(char *args)
+{
+	uint8_t shaping;
+
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: fsk_bt <off|0.3|0.5|0.7|1.0>\r\n");
+		return;
+	}
+
+	if (strncmp(args, "off", 3) == 0) {
+		shaping = FSK_BT_OFF;
+	} else if (strncmp(args, "0.3", 3) == 0) {
+		shaping = FSK_BT_03;
+	} else if (strncmp(args, "0.5", 3) == 0) {
+		shaping = FSK_BT_05;
+	} else if (strncmp(args, "0.7", 3) == 0) {
+		shaping = FSK_BT_07;
+	} else if (strncmp(args, "1.0", 3) == 0 || strcmp(args, "1") == 0) {
+		shaping = FSK_BT_10;
+	} else {
+		shell_reply("Error: Must be off, 0.3, 0.5, 0.7 or 1.0\r\n");
+		return;
+	}
+
+	catsniffer.fsk_config.shaping = shaping;
+	catsniffer.fsk_config.config_pending = true;
+	shell_reply("FSK/GFSK BT shaping updated (pending)\r\n");
+}
+
 static void cmd_fsk_config(char *args)
 {
 	char buf[512];
 	const char *pending_str =
 		catsniffer.fsk_config.config_pending ? " (pending apply)" : "";
 	const char *crc_str = catsniffer.fsk_config.crc_on ? "ON" : "OFF";
+	const char *whitening_str = catsniffer.fsk_config.whitening ? "ON" : "OFF";
+	const char *pkt_mode_str = catsniffer.fsk_config.fixed_length ?
+					    "FIXED" : "VARIABLE";
+	const char *bt_str;
+
+	switch (catsniffer.fsk_config.shaping) {
+	case FSK_BT_OFF:
+		bt_str = "OFF";
+		break;
+	case FSK_BT_03:
+		bt_str = "0.3";
+		break;
+	case FSK_BT_05:
+		bt_str = "0.5";
+		break;
+	case FSK_BT_07:
+		bt_str = "0.7";
+		break;
+	case FSK_BT_10:
+		bt_str = "1.0";
+		break;
+	default:
+		bt_str = "unknown";
+		break;
+	}
 
 	/* Build sync word hex string */
 	char sync_str[24] = {0};
@@ -945,9 +1089,13 @@ static void cmd_fsk_config(char *args)
 		 "  Freq Deviation: %u Hz\r\n"
 		 "  RX Bandwidth: 0x%02X\r\n"
 		 "  TX Power: %d dBm\r\n"
+		 "  Gaussian BT: %s\r\n"
 		 "  Preamble Length: %u bytes\r\n"
 		 "  Sync Word: %s (%d bytes)\r\n"
+		 "  Packet Mode: %s\r\n"
+		 "  Payload Length: %u\r\n"
 		 "  CRC: %s\r\n"
+		 "  Whitening: %s\r\n"
 		 "  Current Modulation: %s\r\n",
 		 pending_str,
 		 catsniffer.fsk_config.frequency,
@@ -955,9 +1103,13 @@ static void cmd_fsk_config(char *args)
 		 catsniffer.fsk_config.fdev,
 		 catsniffer.fsk_config.bandwidth,
 		 catsniffer.fsk_config.tx_power,
+		 bt_str,
 		 catsniffer.fsk_config.preamble_len,
 		 sync_str, catsniffer.fsk_config.sync_word_len,
+		 pkt_mode_str,
+		 catsniffer.fsk_config.payload_len,
 		 crc_str,
+		 whitening_str,
 		 catsniffer.current_modulation == FSK_MOD_FSK ? "FSK" : "LoRa");
 	shell_reply(buf);
 }
