@@ -1,0 +1,64 @@
+/**
+ * These arguments were used when this file was generated. They will be automatically applied on subsequent loads
+ * via the GUI or CLI. Run CLI with '--help' for additional information on how to override these arguments.
+ * @cliArgs --board "/ti/boards/LP_CC1352P7_1" --rtos "nortos" --product "simplelink_cc13xx_cc26xx_sdk@7.41.00.17"
+ * @versions {"tool":"1.19.0+3426"}
+ */
+
+/**
+ * Import the modules used in this configuration.
+ */
+const Board = scripting.addModule("/ti/drivers/Board");
+const GPIO  = scripting.addModule("/ti/drivers/GPIO", {}, false);
+const GPIO1 = GPIO.addInstance();
+const GPIO2 = GPIO.addInstance();
+const RF    = scripting.addModule("/ti/drivers/RF");
+const UART2 = scripting.addModule("/ti/drivers/UART2", {}, false);
+const UART21 = UART2.addInstance();
+const Power = scripting.addModule("/ti/drivers/Power");
+
+/**
+ * Write custom configuration values to the imported modules.
+ */
+
+GPIO1.$name           = "CONFIG_GPIO_LED_0";  // Red LED
+GPIO1.mode            = "Output";
+GPIO1.gpioPin.$assign = "DIO_24";
+
+GPIO2.$name           = "CONFIG_GPIO_LED_1";  // Green LED
+GPIO2.mode            = "Output";
+GPIO2.gpioPin.$assign = "DIO_7";
+
+// UART2 for Host Comms
+UART21.$name               = "CONFIG_UART2_0";
+UART21.rxRingBufferSize    = 128; // Keep small, handled by application buffering
+UART21.uart.$assign        = "UART0";
+UART21.uart.txPin.$assign  = "DIO_13";
+UART21.uart.rxPin.$assign  = "DIO_12";
+
+// Raw Data Pin (for OOK Capture/Replay)
+const GPIO3 = GPIO.addInstance();
+GPIO3.$name = "CONFIG_GPIO_RAW_DATA";
+GPIO3.mode = "Input"; // Will be overridden to Output by Radio Routing, but Input for Capture reading
+GPIO3.gpioPin.$assign = "DIO_15";
+
+// GPTimer for Capture/Replay - Configured manually in capture.c using DriverLib
+// timer1.$name       = "CONFIG_GPTIMER_0";
+// timer1.timerType   = "32 Bits";
+// We don't assign a pin here, we might route it manually or just use it for internal timekeeping
+// For capture, we usually need edge detection. We'll use GPIO edge interrupts and read the timer.
+// Or we can use Input Capture mode if we route the signal. 
+// For OOK Replay, we need accurate timing.
+
+// RF Settings
+// We don't configure specific PHYs here (managed by smartrf_settings.c)
+// But we need the module enabled.
+
+// Bootloader / CCFG Configuration
+const CCFG = scripting.addModule("/ti/devices/CCFG");
+CCFG.enableBootloader = true;
+CCFG.enableBootloaderBackdoor = true;
+CCFG.dioBootloaderBackdoor = 13; // DIO13 (Button 1 or UART TX depending on board, user requested active)
+CCFG.levelBootloaderBackdoor = "Active low";
+CCFG.forceVddr = true; // High power mode often desirable
+
