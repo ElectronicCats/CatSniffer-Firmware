@@ -7,5 +7,6 @@
 void UART_Init();
 void UART_Process();
 void UART_SendResponse(uint8_t cmd, uint8_t status, uint8_t* data, uint16_t len);
+void UART_Print(const char* str);
 
 #endif

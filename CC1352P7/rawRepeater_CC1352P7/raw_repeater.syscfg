@@ -11,7 +11,6 @@
 const Board = scripting.addModule("/ti/drivers/Board");
 const GPIO  = scripting.addModule("/ti/drivers/GPIO", {}, false);
 const GPIO1 = GPIO.addInstance();
-const GPIO2 = GPIO.addInstance();
 const RF    = scripting.addModule("/ti/drivers/RF");
 const UART2 = scripting.addModule("/ti/drivers/UART2", {}, false);
 const UART21 = UART2.addInstance();
@@ -24,10 +23,6 @@ const Power = scripting.addModule("/ti/drivers/Power");
 GPIO1.$name           = "CONFIG_GPIO_LED_0";  // Red LED
 GPIO1.mode            = "Output";
 GPIO1.gpioPin.$assign = "DIO_24";
-
-GPIO2.$name           = "CONFIG_GPIO_LED_1";  // Green LED
-GPIO2.mode            = "Output";
-GPIO2.gpioPin.$assign = "DIO_7";
 
 // UART2 for Host Comms
 UART21.$name               = "CONFIG_UART2_0";
@@ -58,7 +53,7 @@ GPIO3.gpioPin.$assign = "DIO_15";
 const CCFG = scripting.addModule("/ti/devices/CCFG");
 CCFG.enableBootloader = true;
 CCFG.enableBootloaderBackdoor = true;
-CCFG.dioBootloaderBackdoor = 13; // DIO13 (Button 1 or UART TX depending on board, user requested active)
+CCFG.dioBootloaderBackdoor = 15; // Set to DIO15 per user request
 CCFG.levelBootloaderBackdoor = "Active low";
 CCFG.forceVddr = true; // High power mode often desirable
 

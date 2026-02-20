@@ -8,7 +8,7 @@ CC = "$(GCC_ARMCOMPILER)/bin/arm-none-eabi-gcc"
 LNK = "$(GCC_ARMCOMPILER)/bin/arm-none-eabi-gcc"
 HEX = "$(GCC_ARMCOMPILER)/bin/arm-none-eabi-objcopy"
 
-OBJECTS = main.obj uart_proto.obj capture.obj radio.obj smartrf_settings.obj ti_drivers_config.obj startup_gcc.obj
+OBJECTS = main.obj uart_proto.obj capture.obj radio.obj smartrf_settings.obj ti_drivers_config.obj ti_devices_config.obj startup_gcc.obj
 
 NAME = raw_repeater
 
@@ -53,17 +53,18 @@ LFLAGS = -Wl,-T,cc13x2x7_cc26x2x7_nortos.lds \
     -lm \
     --specs=nano.specs
 
-all: $(NAME).out
+all: $(NAME).elf
 
-$(NAME).out: $(OBJECTS)
+$(NAME).elf: $(OBJECTS)
 	@ echo Linking $@
-	@ $(LNK)  $(OBJECTS)  $(LFLAGS) -o $(NAME).out
-	@ $(HEX) -O ihex $(NAME).out $(NAME).hex
+	@ $(LNK)  $(OBJECTS)  $(LFLAGS) -o $(NAME).elf
+	@ $(HEX) -O ihex $(NAME).elf $(NAME).hex
 	@ mkdir -p build
 	@ mv $(NAME).hex build/
-	@ $(RM) $(OBJECTS) $(NAME).out $(NAME).map ti_drivers_config.c ti_drivers_config.h ti_utils_build_linker.cmd.genlibs ti_drivers_config.obj
+	@ mv $(NAME).elf build/
+	@ $(RM) $(OBJECTS) $(NAME).map ti_drivers_config.obj ti_devices_config.obj
 
-ti_drivers_config.c ti_drivers_config.h: $(NAME).syscfg
+ti_drivers_config.c ti_drivers_config.h ti_devices_config.c ti_devices_config.h: $(NAME).syscfg
 	@ echo "SysConfig $(NAME).syscfg"
 	@ $(SYSCONFIG_TOOL) --product $(SIMPLELINK_CC13XX_CC26XX_SDK_INSTALL_DIR)/.metadata/product.json --output . --compiler gcc --board /ti/boards/LP_CC1352P7_1 --rtos nortos $(NAME).syscfg
 
@@ -73,7 +74,7 @@ ti_drivers_config.c ti_drivers_config.h: $(NAME).syscfg
 
 clean:
 	@ echo Cleaning...
-	@ $(RM) $(OBJECTS) $(NAME).out $(NAME).map build/$(NAME).hex ti_drivers_config.c ti_drivers_config.h ti_utils_build_linker.cmd.genlibs ti_drivers_config.obj
+	@ $(RM) $(OBJECTS) $(NAME).map build/$(NAME).hex build/$(NAME).elf ti_drivers_config.c ti_drivers_config.h ti_utils_build_linker.cmd.genlibs ti_drivers_config.obj ti_devices_config.c ti_devices_config.obj syscfg_c.rov.xs ti_utils_build_compiler.opt
 	@ rm -rf build
 
 

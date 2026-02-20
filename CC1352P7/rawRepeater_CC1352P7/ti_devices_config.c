@@ -54,7 +54,7 @@
 #define SET_CCFG_BL_CONFIG_BL_ENABLE                    0xC5
 
 // DIO number for boot loader backdoor
-#define SET_CCFG_BL_CONFIG_BL_PIN_NUMBER                0xd
+#define SET_CCFG_BL_CONFIG_BL_PIN_NUMBER                0xf
 
 // Active low to open boot loader backdoor
 #define SET_CCFG_BL_CONFIG_BL_LEVEL                     0x0

@@ -11,6 +11,7 @@
 #include "radio.h"
 #include "capture.h"
 #include "uart_proto.h"
+#include <NoRTOS.h>
 
 // Externs for LED GPIOs
 // ...
@@ -19,8 +20,9 @@ int main(void)
 {
     // Initialize Board
     Board_init();
+    GPIO_init();
     
-    // Blink LED 3 times to indicate start (Verify DIO24)
+    // Blink LED 3 times to indicate start (Verify DIO6)
     // CPUdelay(16000000) approx 1/3 second at 48MHz
     for (int i = 0; i < 3; i++) {
         GPIO_write(CONFIG_GPIO_LED_0, 1);
@@ -34,13 +36,16 @@ int main(void)
     Radio_Init();
     // Capture_Init is called on demand or here
     Capture_Init();
+    
+    NoRTOS_start(); // Start NoRTOS framework enabling interrupts
+
+    
+    // Print Boot Message
+    UART_Print("\r\n\r\n--- CC1352P7 Raw Repeater Booted ---\r\n");
 
     while (1) {
         // Process UART
         UART_Process();
-        
-        // Blink Green LED if capturing
-        // ...
         
         // Low Power Policy
         // Since NoRTOS, we must explicitly call Power_idle if we want to sleep
