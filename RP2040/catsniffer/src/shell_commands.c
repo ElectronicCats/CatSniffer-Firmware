@@ -73,6 +73,34 @@ static void cmd_fsk_apply(char *args);
 static void cmd_modulation(char *args);
 static void cmd_radio(char *args);
 
+static const char *fsk_bw_reg_to_khz_str(uint8_t bw_reg)
+{
+	switch (bw_reg) {
+	case 0x1F: return "4.8";
+	case 0x17: return "5.8";
+	case 0x0F: return "7.3";
+	case 0x1E: return "9.7";
+	case 0x16: return "11.7";
+	case 0x0E: return "14.6";
+	case 0x1D: return "19.5";
+	case 0x15: return "23.4";
+	case 0x0D: return "29.3";
+	case 0x1C: return "39.0";
+	case 0x14: return "46.9";
+	case 0x0C: return "58.6";
+	case 0x1B: return "78.2";
+	case 0x13: return "93.8";
+	case 0x0B: return "117.3";
+	case 0x1A: return "156.2";
+	case 0x12: return "187.2";
+	case 0x0A: return "234.3";
+	case 0x19: return "312.0";
+	case 0x11: return "373.6";
+	case 0x09: return "467.0";
+	default: return "unknown";
+	}
+}
+
 // Command table
 static const shell_cmd_t commands[] = {
 	{ "help", cmd_help, "Show available commands", false },
@@ -127,6 +155,10 @@ static void cmd_help(char *args)
 			 cmd->help);
 		shell_reply(buf);
 	}
+	shell_reply("\r\nFSK bandwidths (kHz):\r\n");
+	shell_reply("  4.8, 5.8, 7.3, 9.7, 11.7, 14.6, 19.5, 23.4,\r\n");
+	shell_reply("  29.3, 39.0, 46.9, 58.6, 78.2, 93.8, 117.3,\r\n");
+	shell_reply("  156.2, 187.2, 234.3, 312.0, 373.6, 467.0\r\n");
 }
 
 static void cmd_boot(char *args)
@@ -1050,6 +1082,7 @@ static void cmd_fsk_config(char *args)
 	const char *whitening_str = catsniffer.fsk_config.whitening ? "ON" : "OFF";
 	const char *pkt_mode_str = catsniffer.fsk_config.fixed_length ?
 					    "FIXED" : "VARIABLE";
+	const char *bw_khz_str = fsk_bw_reg_to_khz_str(catsniffer.fsk_config.bandwidth);
 	const char *bt_str;
 
 	switch (catsniffer.fsk_config.shaping) {
@@ -1087,7 +1120,7 @@ static void cmd_fsk_config(char *args)
 		 "  Frequency: %u Hz\r\n"
 		 "  Bitrate: %u bps\r\n"
 		 "  Freq Deviation: %u Hz\r\n"
-		 "  RX Bandwidth: 0x%02X\r\n"
+		 "  RX Bandwidth: 0x%02X (%s kHz)\r\n"
 		 "  TX Power: %d dBm\r\n"
 		 "  Gaussian BT: %s\r\n"
 		 "  Preamble Length: %u bytes\r\n"
@@ -1102,6 +1135,7 @@ static void cmd_fsk_config(char *args)
 		 catsniffer.fsk_config.bitrate,
 		 catsniffer.fsk_config.fdev,
 		 catsniffer.fsk_config.bandwidth,
+		 bw_khz_str,
 		 catsniffer.fsk_config.tx_power,
 		 bt_str,
 		 catsniffer.fsk_config.preamble_len,
