@@ -18,6 +18,7 @@ void shell_reply(const char *msg);
 void change_mode(unsigned long new_mode);
 void change_band(unsigned long new_band);
 void process_lora_command(char *cmd_line);
+int queue_radio_command(const char *cmd_line);
 void set_status_leds(int l0, int l1, int l2);
 
 extern catsniffer_t catsniffer;
@@ -181,9 +182,11 @@ static void cmd_status(char *args)
 									"m";
 	}
 	snprintf(buf, sizeof(buf),
-		 "Mode: %d, Band: %d, LoRa: %s, LoRa Mode: %s, FW: %s, CC1352 FW: %s "
-		 "(%s)\r\n",
-		 catsniffer.mode, catsniffer.band, lora_status, mode_str,
+		 "Mode: %d, Band: %d, Radio: %s, LoRa: %s, LoRa Mode: %s, FW: %s, "
+		 "CC1352 FW: %s (%s)\r\n",
+		 catsniffer.mode, catsniffer.band,
+		 catsniffer.current_modulation == FSK_MOD_FSK ? "FSK" : "LoRa",
+		 lora_status, mode_str,
 		 CATSNIFFER_FW_VERSION, fw_id_str, fw_type);
 	shell_reply(buf);
 }
@@ -1018,6 +1021,7 @@ static void cmd_modulation(char *args)
 static void cmd_radio(char *args)
 {
 	char forwarded[128];
+	int ret;
 
 	while (*args && *args != ' ')
 		args++;
@@ -1030,7 +1034,10 @@ static void cmd_radio(char *args)
 	}
 
 	snprintf(forwarded, sizeof(forwarded), "%s", args);
-	process_lora_command(forwarded);
+	ret = queue_radio_command(forwarded);
+	if (ret < 0) {
+		shell_reply("ERROR: Failed to queue radio command\r\n");
+	}
 }
 
 // Main command processor

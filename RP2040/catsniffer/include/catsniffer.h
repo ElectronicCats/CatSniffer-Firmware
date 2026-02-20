@@ -138,6 +138,7 @@ void change_baud(unsigned long new_baud);
 void change_band(unsigned long new_band);
 void change_mode(unsigned long new_mode);
 void process_lora_command(char *cmd_line);
+int queue_radio_command(const char *cmd_line);
 int apply_lora_config(void);
 
 // FSK function prototypes
