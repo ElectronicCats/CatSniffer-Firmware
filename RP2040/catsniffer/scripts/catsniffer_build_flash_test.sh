@@ -14,6 +14,8 @@ PRISTINE_BUILD=0
 SEND_REBOOT=1
 VERBOSE=0
 SHELL_PORT_OVERRIDE=""
+ALL_DEVICES=0
+FW_VERSION_OVERRIDE=""
 
 usage() {
     cat <<'EOF'
@@ -27,6 +29,8 @@ Main flags:
 If no -c/-f/-t is provided, script runs all three stages: compile + flash + test.
 
 Useful flags:
+  --all Flash all detected CatSniffers (all RPI-RP2* mounts)
+  --fw-version <ver> Set firmware version label (export CATSNIFFER_FW_VERSION)
   -p    Pristine build (west build -p always)
   -n    Do not send "reboot" command before flashing
   -s <port>  Override shell serial port (example: /dev/cu.usbmodem1205)
@@ -35,6 +39,31 @@ Useful flags:
   -h    Show this help
 EOF
 }
+
+# Parse long flags first
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --all)
+            ALL_DEVICES=1
+            shift
+            ;;
+        --fw-version)
+            if [[ $# -lt 2 ]]; then
+                echo "ERROR: --fw-version requires a value"
+                usage
+                exit 1
+            fi
+            FW_VERSION_OVERRIDE="$2"
+            shift 2
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${ARGS[@]}"
 
 while getopts ":cftpns:u:vh" opt; do
     case "$opt" in
@@ -64,14 +93,20 @@ fi
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     MOUNT_POINT="/Volumes/RPI-RP2"
+    MOUNT_GLOB="/Volumes/RPI-RP2*"
     SERIAL_PATTERN="/dev/cu.usbmodem*"
 elif [[ "$OSTYPE" == "linux"* ]]; then
     MOUNT_POINT="/media/$USER/RPI-RP2"
+    MOUNT_GLOB="/media/$USER/RPI-RP2*"
     SERIAL_PATTERN="/dev/ttyACM*"
 else
     echo "ERROR: Unsupported OS: $OSTYPE"
     exit 1
 fi
+
+list_shell_ports() {
+    ls $SERIAL_PATTERN 2>/dev/null | sort || true
+}
 
 find_shell_port() {
     if [[ -n "$SHELL_PORT_OVERRIDE" ]]; then
@@ -79,6 +114,20 @@ find_shell_port() {
     else
         ls $SERIAL_PATTERN 2>/dev/null | sort | tail -1 || true
     fi
+}
+
+list_mount_points() {
+    compgen -G "$MOUNT_GLOB" || true
+}
+
+read_lines_into_array() {
+    local __var_name="$1"
+    local __line
+    eval "$__var_name=()"
+    while IFS= read -r __line; do
+        [[ -n "$__line" ]] || continue
+        eval "$__var_name+=(\"\$__line\")"
+    done
 }
 
 wait_for_mount() {
@@ -93,6 +142,22 @@ wait_for_mount() {
             return 1
         fi
         printf "\r      Waiting... %ds" "$elapsed"
+    done
+    echo ""
+}
+
+wait_for_any_mount() {
+    local timeout=30
+    local elapsed=0
+    while [[ -z "$(list_mount_points)" ]]; do
+        sleep 1
+        elapsed=$((elapsed + 1))
+        if [[ $elapsed -ge $timeout ]]; then
+            echo "ERROR: Timeout waiting for any mount matching $MOUNT_GLOB"
+            echo "       Try: hold BOOTSEL and plug USB manually"
+            return 1
+        fi
+        printf "\r      Waiting for any board... %ds" "$elapsed"
     done
     echo ""
 }
@@ -114,6 +179,10 @@ wait_for_serial_ports() {
 echo "=== Catsniffer Build/Flash/Test ==="
 echo "Platform: $OSTYPE"
 echo "Compile: $DO_COMPILE | Flash: $DO_FLASH | Test: $DO_TEST"
+echo "All devices: $ALL_DEVICES"
+if [[ -n "$FW_VERSION_OVERRIDE" ]]; then
+    echo "FW version override: $FW_VERSION_OVERRIDE"
+fi
 cd "$PROJECT_DIR"
 
 if [[ $DO_COMPILE -eq 1 ]]; then
@@ -121,11 +190,27 @@ if [[ $DO_COMPILE -eq 1 ]]; then
     echo "[compile] Building firmware..."
     source "$HOME/zephyrproject/.venv/bin/activate"
     export ZEPHYR_BASE="$HOME/zephyrproject/zephyr"
+    mkdir -p "$PROJECT_DIR/.cache/zephyr"
+    mkdir -p "$PROJECT_DIR/.cache/ccache/tmp"
+    export CCACHE_DIR="$PROJECT_DIR/.cache/ccache"
+    export CCACHE_TEMPDIR="$PROJECT_DIR/.cache/ccache/tmp"
+    CMAKE_ARGS=("-DUSER_CACHE_DIR=$PROJECT_DIR/.cache/zephyr")
+    if [[ -n "$FW_VERSION_OVERRIDE" ]]; then
+        export CATSNIFFER_FW_VERSION="$FW_VERSION_OVERRIDE"
+        CMAKE_ARGS+=("-DCATSNIFFER_FW_VERSION=$FW_VERSION_OVERRIDE")
+    fi
 
     if [[ $PRISTINE_BUILD -eq 1 ]]; then
-        west build -p always -b rpi_pico
+        echo "      Mode: pristine rebuild"
+        west build -p always -b rpi_pico -- "${CMAKE_ARGS[@]}"
     else
-        west build -b rpi_pico
+        if [[ -d "$PROJECT_DIR/build" && ! -f "$PROJECT_DIR/build/build.ninja" ]]; then
+            echo "      Build dir is incomplete (missing build.ninja). Regenerating pristine..."
+            west build -p always -b rpi_pico -- "${CMAKE_ARGS[@]}"
+        else
+            echo "      Mode: incremental rebuild"
+            west build -b rpi_pico -- "${CMAKE_ARGS[@]}"
+        fi
     fi
 
     if [[ ! -f "$UF2_FILE" ]]; then
@@ -144,23 +229,60 @@ if [[ $DO_FLASH -eq 1 ]]; then
 
     echo ""
     echo "[flash] Preparing board..."
-    if [[ $SEND_REBOOT -eq 1 ]]; then
-        SHELL_PORT="$(find_shell_port)"
-        if [[ -n "$SHELL_PORT" ]]; then
-            echo "      Sending 'reboot' to $SHELL_PORT"
-            echo "reboot" > "$SHELL_PORT" 2>/dev/null || true
-            sleep 1
-        else
-            echo "      No serial shell port found. Continuing..."
+
+    if [[ $ALL_DEVICES -eq 1 ]]; then
+        if [[ -n "$SHELL_PORT_OVERRIDE" ]]; then
+            echo "WARNING: -s/--shell-port is ignored when using --all"
         fi
+
+        if [[ $SEND_REBOOT -eq 1 ]]; then
+            read_lines_into_array ALL_PORTS < <(list_shell_ports)
+            if [[ ${#ALL_PORTS[@]} -gt 0 ]]; then
+                echo "      Sending 'reboot' to ${#ALL_PORTS[@]} detected serial ports..."
+                for port in "${ALL_PORTS[@]}"; do
+                    echo "        -> $port"
+                    echo "reboot" > "$port" 2>/dev/null || true
+                done
+                sleep 2
+            else
+                echo "      No serial ports detected. Continuing..."
+            fi
+        fi
+
+        echo "[flash] Waiting for any RPI-RP2 mount..."
+        wait_for_any_mount
+
+        read_lines_into_array MOUNTS < <(list_mount_points)
+        if [[ ${#MOUNTS[@]} -eq 0 ]]; then
+            echo "ERROR: No mount points found for pattern: $MOUNT_GLOB"
+            exit 1
+        fi
+
+        echo "      Flashing ${#MOUNTS[@]} detected board mount(s)..."
+        for mp in "${MOUNTS[@]}"; do
+            echo "        -> $mp"
+            cp "$UF2_FILE" "$mp/"
+        done
+        echo "      Flash complete for all detected mounts."
+    else
+        if [[ $SEND_REBOOT -eq 1 ]]; then
+            SHELL_PORT="$(find_shell_port)"
+            if [[ -n "$SHELL_PORT" ]]; then
+                echo "      Sending 'reboot' to $SHELL_PORT"
+                echo "reboot" > "$SHELL_PORT" 2>/dev/null || true
+                sleep 1
+            else
+                echo "      No serial shell port found. Continuing..."
+            fi
+        fi
+
+        echo "[flash] Waiting for $MOUNT_POINT..."
+        wait_for_mount
+
+        echo "      Copying $(basename "$UF2_FILE") to boot drive..."
+        cp "$UF2_FILE" "$MOUNT_POINT/"
+        echo "      Flash complete."
     fi
-
-    echo "[flash] Waiting for $MOUNT_POINT..."
-    wait_for_mount
-
-    echo "      Copying $(basename "$UF2_FILE") to boot drive..."
-    cp "$UF2_FILE" "$MOUNT_POINT/"
-    echo "      Flash complete."
 fi
 
 if [[ $DO_TEST -eq 1 ]]; then
@@ -169,6 +291,10 @@ if [[ $DO_TEST -eq 1 ]]; then
     if [[ $DO_FLASH -eq 1 ]]; then
         echo "      Waiting for reboot..."
         sleep 3
+    fi
+
+    if [[ $ALL_DEVICES -eq 1 ]]; then
+        echo "      WARNING: --all test runs a single verify pass (not per-device)."
     fi
 
     wait_for_serial_ports
