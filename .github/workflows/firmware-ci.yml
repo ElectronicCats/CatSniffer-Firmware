@@ -64,14 +64,12 @@ jobs:
           west init -l RP2040/catsniffer --mf west-ci.yml
           cd "${GITHUB_WORKSPACE}/RP2040"
           west update
-          west zephyr-export
 
       - name: Build firmware
         shell: bash
-        env:
-          ZEPHYR_SDK_INSTALL_DIR: ${{ env.HOME }}/zephyr-sdk-0.16.8
         run: |
           set -euo pipefail
+          export ZEPHYR_BASE="${GITHUB_WORKSPACE}/RP2040/zephyr"
           export ZEPHYR_SDK_INSTALL_DIR="${HOME}/zephyr-sdk-0.16.8"
           cd "${GITHUB_WORKSPACE}/RP2040"
           west build -s catsniffer \
