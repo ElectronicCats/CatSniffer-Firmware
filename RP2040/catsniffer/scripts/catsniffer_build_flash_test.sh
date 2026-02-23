@@ -91,13 +91,15 @@ if [[ $DO_COMPILE -eq 0 && $DO_FLASH -eq 0 && $DO_TEST -eq 0 ]]; then
     DO_TEST=1
 fi
 
+LINUX_USER="${USER:-$(id -un)}"
+
 if [[ "$OSTYPE" == "darwin"* ]]; then
     MOUNT_POINT="/Volumes/RPI-RP2"
     MOUNT_GLOB="/Volumes/RPI-RP2*"
     SERIAL_PATTERN="/dev/cu.usbmodem*"
 elif [[ "$OSTYPE" == "linux"* ]]; then
-    MOUNT_POINT="/media/$USER/RPI-RP2"
-    MOUNT_GLOB="/media/$USER/RPI-RP2*"
+    MOUNT_POINT="/media/$LINUX_USER/RPI-RP2"
+    MOUNT_GLOB="/media/$LINUX_USER/RPI-RP2*"
     SERIAL_PATTERN="/dev/ttyACM*"
 else
     echo "ERROR: Unsupported OS: $OSTYPE"
