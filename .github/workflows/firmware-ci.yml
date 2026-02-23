@@ -52,9 +52,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install west
           cd "${GITHUB_WORKSPACE}"
-          if [[ ! -d .west ]]; then
-            west init -l RP2040/catsniffer --mf west.yml
+          if [[ -d RP2040/.west ]]; then
+            WEST_WS="${GITHUB_WORKSPACE}/RP2040"
+          elif [[ -d .west ]]; then
+            WEST_WS="${GITHUB_WORKSPACE}"
+          else
+            west init -l RP2040/catsniffer --mf west.yml RP2040
+            WEST_WS="${GITHUB_WORKSPACE}/RP2040"
           fi
+          cd "${WEST_WS}"
+          west topdir
           west update
           west zephyr-export
           pip install -r zephyr/scripts/requirements.txt
@@ -63,8 +70,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "${GITHUB_WORKSPACE}"
-          west build -s RP2040/catsniffer \
+          if [[ -d "${GITHUB_WORKSPACE}/RP2040/.west" ]]; then
+            WEST_WS="${GITHUB_WORKSPACE}/RP2040"
+            APP_SRC="catsniffer"
+          else
+            WEST_WS="${GITHUB_WORKSPACE}"
+            APP_SRC="RP2040/catsniffer"
+          fi
+          cd "${WEST_WS}"
+          west build -s "${APP_SRC}" \
             -b rpi_pico \
             -d "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico" -- \
             -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr"
