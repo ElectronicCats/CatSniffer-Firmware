@@ -46,9 +46,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /work
-          west init -m https://github.com/zephyrproject-rtos/zephyr --mr v4.3.0 /work/zephyrproject
-          cd /work/zephyrproject
+          mkdir -p "${HOME}/zephyrproject"
+          python3 -m venv "${HOME}/zephyrproject/.venv"
+          source "${HOME}/zephyrproject/.venv/bin/activate"
+          pip install --upgrade pip
+          pip install west
+          west init -m https://github.com/wero1414/zephyr --mr fsk-native-driver "${HOME}/zephyrproject"
+          cd "${HOME}/zephyrproject"
           west update
           west zephyr-export
           pip3 install -r zephyr/scripts/requirements.txt
@@ -57,9 +61,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd /work/zephyrproject
-          west build -s "${GITHUB_WORKSPACE}" -b rpi_pico -d "${GITHUB_WORKSPACE}/build/rpi_pico" -- \
-            -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/.cache/zephyr"
+          cd "${GITHUB_WORKSPACE}/RP2040/catsniffer"
+          bash scripts/catsniffer_build_flash_test.sh -c
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -67,6 +70,6 @@ jobs:
           name: catsniffer-rpi-pico-${{ github.sha }}
           if-no-files-found: error
           path: |
-            build/rpi_pico/zephyr/zephyr.uf2
-            build/rpi_pico/zephyr/zephyr.hex
-            build/rpi_pico/zephyr/zephyr.elf
+            RP2040/catsniffer/build/zephyr/zephyr.uf2
+            RP2040/catsniffer/build/zephyr/zephyr.hex
+            RP2040/catsniffer/build/zephyr/zephyr.elf
