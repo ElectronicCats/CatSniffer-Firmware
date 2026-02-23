@@ -52,7 +52,7 @@ jobs:
           elif [[ -d .west ]]; then
             WEST_WS="${GITHUB_WORKSPACE}"
           else
-            west init -l RP2040/catsniffer --mf west.yml RP2040
+            west init -l RP2040/catsniffer --mf west.yml
             WEST_WS="${GITHUB_WORKSPACE}/RP2040"
           fi
           cd "${WEST_WS}"
