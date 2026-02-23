@@ -62,9 +62,20 @@ jobs:
           fi
           cd "${WEST_WS}"
           west topdir
-          west update
+          west update --fetch-opt="--depth=1" hal_rpi_pico cmsis
           west zephyr-export
-          pip install -r zephyr/scripts/requirements.txt
+          pip install -r zephyr/scripts/requirements-build-test.txt
+
+      - name: Install Zephyr SDK (ARM toolchain only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_VERSION="0.16.8"
+          SDK_MIN="zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
+          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/${SDK_MIN}" \
+               -O "/tmp/${SDK_MIN}"
+          tar xf "/tmp/${SDK_MIN}" -C "${HOME}"
+          "${HOME}/zephyr-sdk-${SDK_VERSION}/setup.sh" -t arm-zephyr-eabi -h -c
 
       - name: Build firmware
         shell: bash
