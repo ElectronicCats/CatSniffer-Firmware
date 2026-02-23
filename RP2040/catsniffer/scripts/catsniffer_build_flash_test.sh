@@ -10,12 +10,16 @@ UF2_FILE="$PROJECT_DIR/build/zephyr/zephyr.uf2"
 DO_COMPILE=0
 DO_FLASH=0
 DO_TEST=0
+DO_CJTAG_TEST=0
 PRISTINE_BUILD=0
 SEND_REBOOT=1
 VERBOSE=0
 SHELL_PORT_OVERRIDE=""
 ALL_DEVICES=0
 FW_VERSION_OVERRIDE=""
+CJTAG_ATTEMPTS=""
+CJTAG_DEVICE=""
+CJTAG_QUIET=0
 
 usage() {
     cat <<'EOF'
@@ -25,12 +29,16 @@ Main flags:
   -c    Compile only
   -f    Flash only
   -t    Test only (runs verify_endpoints.py)
+  --cjtag-test  Run CC1352 JTAG smoke test (scripts/test_cc1352_jtag.py)
 
 If no -c/-f/-t is provided, script runs all three stages: compile + flash + test.
 
 Useful flags:
   --all Flash all detected CatSniffers (all RPI-RP2* mounts)
   --fw-version <ver> Set firmware version label (export CATSNIFFER_FW_VERSION)
+  --cjtag-attempts <n> Retry count for --cjtag-test
+  --cjtag-device <n> Device index for --cjtag-test
+  --cjtag-quiet Quiet mode for --cjtag-test
   -p    Pristine build (west build -p always)
   -n    Do not send "reboot" command before flashing
   -s <port>  Override shell serial port (example: /dev/cu.usbmodem1205)
@@ -56,6 +64,32 @@ while [[ $# -gt 0 ]]; do
             fi
             FW_VERSION_OVERRIDE="$2"
             shift 2
+            ;;
+        --cjtag-test)
+            DO_CJTAG_TEST=1
+            shift
+            ;;
+        --cjtag-attempts)
+            if [[ $# -lt 2 ]]; then
+                echo "ERROR: --cjtag-attempts requires a value"
+                usage
+                exit 1
+            fi
+            CJTAG_ATTEMPTS="$2"
+            shift 2
+            ;;
+        --cjtag-device)
+            if [[ $# -lt 2 ]]; then
+                echo "ERROR: --cjtag-device requires a value"
+                usage
+                exit 1
+            fi
+            CJTAG_DEVICE="$2"
+            shift 2
+            ;;
+        --cjtag-quiet)
+            CJTAG_QUIET=1
+            shift
             ;;
         *)
             ARGS+=("$1")
@@ -85,7 +119,7 @@ if [[ $VERBOSE -eq 1 ]]; then
     set -x
 fi
 
-if [[ $DO_COMPILE -eq 0 && $DO_FLASH -eq 0 && $DO_TEST -eq 0 ]]; then
+if [[ $DO_COMPILE -eq 0 && $DO_FLASH -eq 0 && $DO_TEST -eq 0 && $DO_CJTAG_TEST -eq 0 ]]; then
     DO_COMPILE=1
     DO_FLASH=1
     DO_TEST=1
@@ -179,6 +213,7 @@ wait_for_serial_ports() {
 echo "=== Catsniffer Build/Flash/Test ==="
 echo "Platform: $OSTYPE"
 echo "Compile: $DO_COMPILE | Flash: $DO_FLASH | Test: $DO_TEST"
+echo "cJTAG test: $DO_CJTAG_TEST"
 echo "All devices: $ALL_DEVICES"
 if [[ -n "$FW_VERSION_OVERRIDE" ]]; then
     echo "FW version override: $FW_VERSION_OVERRIDE"
@@ -309,6 +344,34 @@ if [[ $DO_TEST -eq 1 ]]; then
     fi
 
     python3 "$SCRIPT_DIR/verify_endpoints.py"
+fi
+
+if [[ $DO_CJTAG_TEST -eq 1 ]]; then
+    echo ""
+    echo "[cjtag-test] Running CC1352 JTAG smoke test..."
+
+    if [[ $DO_FLASH -eq 1 ]]; then
+        echo "      Waiting for reboot..."
+        sleep 3
+    fi
+
+    wait_for_serial_ports
+
+    CJTAG_ARGS=()
+    if [[ -n "$CJTAG_ATTEMPTS" ]]; then
+        CJTAG_ARGS+=("--attempts" "$CJTAG_ATTEMPTS")
+    fi
+    if [[ -n "$CJTAG_DEVICE" ]]; then
+        CJTAG_ARGS+=("--device" "$CJTAG_DEVICE")
+    fi
+    if [[ $CJTAG_QUIET -eq 1 ]]; then
+        CJTAG_ARGS+=("--quiet")
+    fi
+    if [[ -n "$FW_VERSION_OVERRIDE" ]]; then
+        CJTAG_ARGS+=("--expect-fw" "$FW_VERSION_OVERRIDE")
+    fi
+
+    python3 "$SCRIPT_DIR/test_cc1352_jtag.py" "${CJTAG_ARGS[@]}"
 fi
 
 echo ""

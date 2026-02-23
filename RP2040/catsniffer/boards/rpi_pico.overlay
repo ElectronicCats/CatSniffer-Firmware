@@ -17,6 +17,7 @@
         cjtag1 = &cjtag1;
         cjtag2 = &cjtag2;
         cjtag3 = &cjtag3;
+        cjtag-reset = &cjtag_reset;
         lora0 = &sx1262;
     };
 
@@ -78,6 +79,11 @@
         cjtag3: cjtag3 {
             gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
             label = "CJTAG14";
+        };
+
+        cjtag_reset: cjtag-reset {
+            gpios = <&gpio0 15 GPIO_ACTIVE_HIGH>;
+            label = "RESET_CC";
         };
 
         sx1262_cs_pin: sx1262-cs {

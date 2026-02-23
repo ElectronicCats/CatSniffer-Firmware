@@ -11,6 +11,7 @@
 #include <pico/bootrom.h>
 
 #include "catsniffer.h"
+#include "cc1352_jtag.h"
 #include "fw_metadata.h"
 
 // External functions from main.c
@@ -72,6 +73,7 @@ static void cmd_fsk_config(char *args);
 static void cmd_fsk_apply(char *args);
 static void cmd_modulation(char *args);
 static void cmd_radio(char *args);
+static void cmd_cc1352_jtag(char *args);
 
 static const char *fsk_bw_reg_to_khz_str(uint8_t bw_reg)
 {
@@ -141,8 +143,9 @@ static const shell_cmd_t commands[] = {
 	{ "fsk_config", cmd_fsk_config, "Show FSK config", false },
 	{ "fsk_apply", cmd_fsk_apply, "Apply FSK config", false },
 	{ "modulation", cmd_modulation, "lora|fsk modulation", true },
-	{ "radio", cmd_radio, "Forward radio cmd (TEST/FSKRX/FSKTX/TX)", true },
-	{ NULL, NULL, NULL, false }
+		{ "radio", cmd_radio, "Forward radio cmd (TEST/FSKRX/FSKTX/TX)", true },
+		{ "cc1352_jtag", cmd_cc1352_jtag, "init|id|halt|status|diag", true },
+		{ NULL, NULL, NULL, false }
 };
 
 // Command implementations
@@ -1224,6 +1227,118 @@ static void cmd_radio(char *args)
 	if (ret < 0) {
 		shell_reply("ERROR: Failed to queue radio command\r\n");
 	}
+}
+
+static void cmd_cc1352_jtag(char *args)
+{
+	char *subcmd;
+	char buf[196];
+	struct cc1352_jtag_status st;
+	struct cc1352_jtag_diag dg;
+	uint32_t jrc_id, cpu_id, dhcsr;
+	int ret;
+
+	while (*args && *args != ' ') {
+		args++;
+	}
+	while (*args == ' ') {
+		args++;
+	}
+	subcmd = args;
+	while (*args && *args != ' ') {
+		args++;
+	}
+	if (*args != '\0') {
+		*args++ = '\0';
+	}
+
+	if (subcmd[0] == '\0') {
+		shell_reply("Usage: cc1352_jtag <init|id|halt|status|diag>\r\n");
+		return;
+	}
+
+	if (strcmp(subcmd, "init") == 0) {
+		ret = cc1352_jtag_init_sequence();
+		if (ret < 0) {
+			snprintf(buf, sizeof(buf), "ERR init: %s (%d)\r\n",
+				 cc1352_jtag_strerror(ret), ret);
+			shell_reply(buf);
+			return;
+		}
+		shell_reply("OK cc1352_jtag init complete\r\n");
+		return;
+	}
+
+	if (strcmp(subcmd, "id") == 0) {
+		ret = cc1352_jtag_read_idcodes(&jrc_id, &cpu_id);
+		if (ret < 0) {
+			snprintf(buf, sizeof(buf), "ERR id: %s (%d)\r\n",
+				 cc1352_jtag_strerror(ret), ret);
+			shell_reply(buf);
+			return;
+		}
+		snprintf(buf, sizeof(buf),
+			 "OK JRC IDCODE: 0x%08X, CPU DAP IDCODE: 0x%08X\r\n",
+			 jrc_id, cpu_id);
+		shell_reply(buf);
+		return;
+	}
+
+	if (strcmp(subcmd, "halt") == 0) {
+		ret = cc1352_jtag_halt_cpu(&dhcsr);
+		if (ret < 0) {
+			snprintf(buf, sizeof(buf), "ERR halt: %s (%d)\r\n",
+				 cc1352_jtag_strerror(ret), ret);
+			shell_reply(buf);
+			return;
+		}
+		snprintf(buf, sizeof(buf), "OK CPU halted, DHCSR=0x%08X\r\n", dhcsr);
+		shell_reply(buf);
+		return;
+	}
+
+	if (strcmp(subcmd, "status") == 0) {
+		cc1352_jtag_get_status(&st);
+		snprintf(buf, sizeof(buf),
+			 "JTAG status: pins=%d 4wire=%d cpu_tap=%d chain=%d taps=%d cpu_idx=%d jrc_idx=%d swap=%d rst_al=%d rst_src=%u rst_ctrl=%u rst_obs=%u pin_tck=%u pin_tms=%u pin_tdi=%u pin_tdo=%u\r\n",
+			 st.pins_ready, st.switched_to_4wire, st.cpu_tap_enabled,
+			 st.chain_detected, st.chain_taps, st.cpu_tap_index,
+			 st.jrc_tap_index, st.data_pins_swapped, st.reset_active_low,
+			 st.reset_source, st.reset_ctrl_level, st.reset_obs_level,
+			 st.tck_pin, st.tms_pin, st.tdi_pin, st.tdo_pin);
+		shell_reply(buf);
+		snprintf(buf, sizeof(buf),
+			 "  IDs: JRC=0x%08X CPU=0x%08X DHCSR=0x%08X\r\n",
+			 st.jrc_idcode, st.cpu_idcode, st.last_dhcsr);
+		shell_reply(buf);
+		return;
+	}
+
+	if (strcmp(subcmd, "diag") == 0) {
+		ret = cc1352_jtag_diag_probe(&dg);
+		if (ret < 0) {
+			snprintf(buf, sizeof(buf), "ERR diag: %s (%d)\r\n",
+				 cc1352_jtag_strerror(ret), ret);
+			shell_reply(buf);
+			return;
+		}
+
+		snprintf(buf, sizeof(buf),
+			 "diag map0(normal): direct=0x%08X switched=0x%08X tdo(pu/pd)=%u/%u\r\n",
+			 dg.direct_jrc_id[0], dg.switched_jrc_id[0],
+			 dg.tdo_pull_up_level[0], dg.tdo_pull_down_level[0]);
+		shell_reply(buf);
+		snprintf(buf, sizeof(buf),
+			 "diag map1(swapped): direct=0x%08X switched=0x%08X tdo(pu/pd)=%u/%u\r\n",
+			 dg.direct_jrc_id[1], dg.switched_jrc_id[1],
+			 dg.tdo_pull_up_level[1], dg.tdo_pull_down_level[1]);
+		shell_reply(buf);
+		shell_reply(
+			"Expected JRC ~= 0x1BB7702F (or masked 0x?BB7702F)\r\n");
+		return;
+	}
+
+	shell_reply("Usage: cc1352_jtag <init|id|halt|status|diag>\r\n");
 }
 
 // Main command processor
