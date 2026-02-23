@@ -40,10 +40,20 @@ jobs:
       - name: Checkout firmware repo
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: sudo apt-get install -y ninja-build cmake
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install Zephyr SDK (ARM toolchain only)
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.8/zephyr-sdk-0.16.8_linux-x86_64_minimal.tar.xz \
+               -O /tmp/zephyr-sdk-minimal.tar.xz
+          tar xf /tmp/zephyr-sdk-minimal.tar.xz -C $HOME
+          $HOME/zephyr-sdk-0.16.8/setup.sh -t arm-zephyr-eabi -h
 
       - name: Initialize Zephyr workspace
         shell: bash
@@ -51,45 +61,21 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           pip install west
-          cd "${GITHUB_WORKSPACE}"
-          if [[ -d RP2040/.west ]]; then
-            WEST_WS="${GITHUB_WORKSPACE}/RP2040"
-          elif [[ -d .west ]]; then
-            WEST_WS="${GITHUB_WORKSPACE}"
-          else
-            west init -l RP2040/catsniffer --mf west.yml
-            WEST_WS="${GITHUB_WORKSPACE}/RP2040"
-          fi
-          cd "${WEST_WS}"
-          west topdir
+          west init -l RP2040/catsniffer --mf west.yml
+          cd "${GITHUB_WORKSPACE}/RP2040"
           west update --fetch-opt="--depth=1"
           west zephyr-export
           pip install -r zephyr/scripts/requirements-build-test.txt
 
-      - name: Install Zephyr SDK (ARM toolchain only)
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDK_VERSION="0.16.8"
-          SDK_MIN="zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
-          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/${SDK_MIN}" \
-               -O "/tmp/${SDK_MIN}"
-          tar xf "/tmp/${SDK_MIN}" -C "${HOME}"
-          "${HOME}/zephyr-sdk-${SDK_VERSION}/setup.sh" -t arm-zephyr-eabi -h -c
-
       - name: Build firmware
         shell: bash
+        env:
+          ZEPHYR_SDK_INSTALL_DIR: ${{ env.HOME }}/zephyr-sdk-0.16.8
         run: |
           set -euo pipefail
-          if [[ -d "${GITHUB_WORKSPACE}/RP2040/.west" ]]; then
-            WEST_WS="${GITHUB_WORKSPACE}/RP2040"
-            APP_SRC="catsniffer"
-          else
-            WEST_WS="${GITHUB_WORKSPACE}"
-            APP_SRC="RP2040/catsniffer"
-          fi
-          cd "${WEST_WS}"
-          west build -s "${APP_SRC}" \
+          export ZEPHYR_SDK_INSTALL_DIR="${HOME}/zephyr-sdk-0.16.8"
+          cd "${GITHUB_WORKSPACE}/RP2040"
+          west build -s catsniffer \
             -b rpi_pico \
             -d "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico" -- \
             -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr"
