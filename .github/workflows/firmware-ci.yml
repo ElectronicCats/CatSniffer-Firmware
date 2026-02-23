@@ -60,12 +60,11 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install west
-          west init -l RP2040/catsniffer --mf west.yml
+          pip install west jsonschema pyelftools PyYAML
+          west init -l RP2040/catsniffer --mf west-ci.yml
           cd "${GITHUB_WORKSPACE}/RP2040"
           west update
           west zephyr-export
-          pip install -r zephyr/scripts/requirements-build-test.txt
 
       - name: Build firmware
         shell: bash
