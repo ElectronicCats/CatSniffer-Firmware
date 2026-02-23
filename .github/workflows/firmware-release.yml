@@ -17,8 +17,6 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-22.04
-    container:
-      image: ghcr.io/zephyrproject-rtos/ci:latest
 
     steps:
       - name: Checkout firmware repo
@@ -37,38 +35,32 @@ jobs:
           echo "release_tag=${rel}" >> "${GITHUB_OUTPUT}"
           echo "CATSNIFFER_FW_VERSION=${rel}" >> "${GITHUB_ENV}"
 
-      - name: Initialize Zephyr workspace
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "${HOME}/zephyrproject"
-          python3 -m venv "${HOME}/zephyrproject/.venv"
-          source "${HOME}/zephyrproject/.venv/bin/activate"
-          pip install --upgrade pip
-          pip install west
-          west init -m https://github.com/wero1414/zephyr --mr fsk-native-driver "${HOME}/zephyrproject"
-          cd "${HOME}/zephyrproject"
-          west update
-          west zephyr-export
-          pip3 install -r zephyr/scripts/requirements.txt
+      - name: Setup Zephyr project
+        uses: zephyrproject-rtos/action-zephyr-setup@v1
+        with:
+          app-path: RP2040/catsniffer
+          toolchains: arm-zephyr-eabi
 
       - name: Build release firmware
         shell: bash
         run: |
           set -euo pipefail
-          cd "${GITHUB_WORKSPACE}/RP2040/catsniffer"
-          bash scripts/catsniffer_build_flash_test.sh -c --fw-version "${CATSNIFFER_FW_VERSION}"
+          west build -s "${GITHUB_WORKSPACE}/RP2040/catsniffer" \
+            -b rpi_pico \
+            -d "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico" -- \
+            -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr" \
+            -DCATSNIFFER_FW_VERSION="${CATSNIFFER_FW_VERSION}"
 
       - name: Prepare release assets
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${GITHUB_WORKSPACE}/release-assets"
-          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/zephyr/zephyr.uf2" \
+          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.uf2" \
              "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.uf2"
-          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/zephyr/zephyr.hex" \
+          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.hex" \
              "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.hex"
-          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/zephyr/zephyr.elf" \
+          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.elf" \
              "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.elf"
           sha256sum "${GITHUB_WORKSPACE}/release-assets/"* > \
             "${GITHUB_WORKSPACE}/release-assets/SHA256SUMS.txt"
