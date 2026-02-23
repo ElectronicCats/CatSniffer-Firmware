@@ -12,4 +12,4 @@ manifest:
       import: true
 
   self:
-    path: example-application
+    path: RP2040/catsniffer

@@ -40,17 +40,31 @@ jobs:
       - name: Checkout firmware repo
         uses: actions/checkout@v4
 
-      - name: Setup Zephyr project
-        uses: zephyrproject-rtos/action-zephyr-setup@v1
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          app-path: RP2040/catsniffer
-          toolchains: arm-zephyr-eabi
+          python-version: "3.12"
+
+      - name: Initialize Zephyr workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install west
+          cd "${GITHUB_WORKSPACE}"
+          if [[ ! -d .west ]]; then
+            west init -l RP2040/catsniffer --mf west.yml
+          fi
+          west update
+          west zephyr-export
+          pip install -r zephyr/scripts/requirements.txt
 
       - name: Build firmware
         shell: bash
         run: |
           set -euo pipefail
-          west build -s "${GITHUB_WORKSPACE}/RP2040/catsniffer" \
+          cd "${GITHUB_WORKSPACE}"
+          west build -s RP2040/catsniffer \
             -b rpi_pico \
             -d "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico" -- \
             -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr"
