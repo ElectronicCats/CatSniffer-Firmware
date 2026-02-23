@@ -177,3 +177,32 @@ sudo usermod -a -G dialout $USER
 ```bash
 pip install pyusb pyserial
 ```
+
+## test_cc1352_jtag.py
+
+Automates the CC1352 JTAG smoke sequence on the shell endpoint (CDC2), with retries.
+
+### Usage
+
+```bash
+python3 scripts/test_cc1352_jtag.py
+python3 scripts/test_cc1352_jtag.py --device 1 --attempts 5
+python3 scripts/test_cc1352_jtag.py --expect-fw cjtag-test
+python3 scripts/test_cc1352_jtag.py --quiet
+```
+
+### What it runs
+
+1. `fw_version`
+2. `cc1352_jtag status`
+3. `cc1352_jtag init`
+4. `cc1352_jtag id`
+5. `cc1352_jtag halt`
+6. `cc1352_jtag status`
+
+### Pass criteria
+
+- `init`, `id`, and `halt` return no `ERR`.
+- `id` returns `OK JRC IDCODE`.
+- `halt` returns `OK CPU halted`.
+- final `status` reports chain detected.
