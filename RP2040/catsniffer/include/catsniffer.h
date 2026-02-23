@@ -30,16 +30,16 @@
 #define MAIN_THREAD_PRIORITY K_PRIO_COOP(7)
 
 // Helper macro to simplify GPIO setup
-#define INIT_GPIO(name, flags) \
-const struct gpio_dt_spec name = \
-	GPIO_DT_SPEC_GET_OR(DT_ALIAS(name), gpios, { 0 }); \
-do { \
-	if (!device_is_ready(name.port)) { \
-		printk("Error: " #name " device not ready\n"); \
-		return 1; \
-	} \
-	gpio_pin_configure_dt(&name, flags); \
-} while (0)
+#define INIT_GPIO(name, flags)                                         \
+	const struct gpio_dt_spec name =                               \
+		GPIO_DT_SPEC_GET_OR(DT_ALIAS(name), gpios, { 0 });     \
+	do {                                                           \
+		if (!device_is_ready(name.port)) {                     \
+			printk("Error: " #name " device not ready\n"); \
+			return 1;                                      \
+		}                                                      \
+		gpio_pin_configure_dt(&name, flags);                   \
+	} while (0)
 
 // Mode definitions
 enum MODE {
@@ -62,9 +62,10 @@ enum LORA_MODE {
 
 // LoRa configuration structure
 typedef struct {
-	uint32_t frequency;	  // Hz (default: 915000000)
-	uint8_t spreading_factor; // SF_7 to SF_12 (default: SF_7)
-	enum lora_signal_bandwidth bandwidth;   // BW_125_KHZ, BW_250_KHZ, BW_500_KHZ
+	uint32_t frequency;		      // Hz (default: 915000000)
+	uint8_t spreading_factor;	      // SF_7 to SF_12 (default: SF_7)
+	enum lora_signal_bandwidth bandwidth; // BW_125_KHZ, BW_250_KHZ,
+					      // BW_500_KHZ
 	uint8_t coding_rate; // CR_4_5, CR_4_6, CR_4_7, CR_4_8 (default: CR_4_5)
 	int8_t tx_power;     // -9 to 22 dBm (default: 20)
 	uint16_t preamble_len; // Default: 12
@@ -76,8 +77,8 @@ typedef struct {
 
 // FSK modulation type
 enum FSK_MODULATION {
-	FSK_MOD_LORA = 0,	// LoRa modulation (default)
-	FSK_MOD_FSK = 1,	// FSK/GFSK modulation
+	FSK_MOD_LORA = 0, // LoRa modulation (default)
+	FSK_MOD_FSK = 1,  // FSK/GFSK modulation
 };
 
 /* SX126x GFSK shaping values */
@@ -89,20 +90,20 @@ enum FSK_MODULATION {
 
 // FSK configuration structure
 typedef struct {
-	uint32_t frequency;	  // Hz (default: 915000000)
-	uint32_t bitrate;	  // Bit rate in bps (default: 50000)
-	uint32_t fdev;		  // Frequency deviation in Hz (default: 25000)
-	uint8_t shaping;	  // Gaussian shaping BT (default: 0.5)
-	uint8_t bandwidth;	  // RX bandwidth (use SX126X_FSK_BW_* constants)
-	int8_t tx_power;	  // -9 to 22 dBm (default: 14)
-	uint16_t preamble_len;	  // Preamble length in bytes (default: 5)
-	uint8_t sync_word[8];	  // Sync word bytes (default: 0x12, 0xAD)
-	uint8_t sync_word_len;	  // Sync word length (default: 2)
-	bool fixed_length;	  // Fixed vs variable length packets
-	uint8_t payload_len;	  // Payload length for fixed mode
-	bool crc_on;		  // Enable CRC (default: true)
-	bool whitening;		  // Enable whitening (default: true)
-	bool config_pending;	  // true if changes not yet applied
+	uint32_t frequency;    // Hz (default: 915000000)
+	uint32_t bitrate;      // Bit rate in bps (default: 50000)
+	uint32_t fdev;	       // Frequency deviation in Hz (default: 25000)
+	uint8_t shaping;       // Gaussian shaping BT (default: 0.5)
+	uint8_t bandwidth;     // RX bandwidth (use SX126X_FSK_BW_* constants)
+	int8_t tx_power;       // -9 to 22 dBm (default: 14)
+	uint16_t preamble_len; // Preamble length in bytes (default: 5)
+	uint8_t sync_word[8];  // Sync word bytes (default: 0x12, 0xAD)
+	uint8_t sync_word_len; // Sync word length (default: 2)
+	bool fixed_length;     // Fixed vs variable length packets
+	uint8_t payload_len;   // Payload length for fixed mode
+	bool crc_on;	       // Enable CRC (default: true)
+	bool whitening;	       // Enable whitening (default: true)
+	bool config_pending;   // true if changes not yet applied
 } fsk_config_t;
 
 // Catsniffer state structure

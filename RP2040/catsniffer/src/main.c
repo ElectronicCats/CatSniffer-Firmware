@@ -102,10 +102,11 @@ void lora_rx_cb(const struct device *dev, uint8_t *data, uint16_t size,
 	ARG_UNUSED(dev);
 	ARG_UNUSED(user_data);
 
-	/* If LoRa callback is hit while we are in FSK mode, force stop stale RX. */
+	/* If LoRa callback is hit while we are in FSK mode, force stop stale
+	 * RX. */
 	if (catsniffer.current_modulation == FSK_MOD_FSK) {
-		const char *warn_msg =
-			"WARN: LORA RX callback active in FSK mode, forcing RX stop\r\n";
+		const char *warn_msg = "WARN: LORA RX callback active in FSK "
+				       "mode, forcing RX stop\r\n";
 		safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t *)warn_msg,
 				  strlen(warn_msg));
 		if (cdc1_dev) {
@@ -440,8 +441,8 @@ int queue_radio_command(const char *cmd_line)
 		return -EINVAL;
 	}
 
-	written = safe_ring_buf_put(&rb_usb_to_sx1262, (const uint8_t *)cmd_line,
-				    len);
+	written = safe_ring_buf_put(&rb_usb_to_sx1262,
+				    (const uint8_t *)cmd_line, len);
 	if (written != len) {
 		return -ENOSPC;
 	}
@@ -609,28 +610,50 @@ int apply_lora_config(void)
 static uint32_t fsk_bw_reg_to_hz(uint8_t bw_reg)
 {
 	switch (bw_reg) {
-	case 0x09: return 467000;
-	case 0x0A: return 234300;
-	case 0x0B: return 117300;
-	case 0x0C: return 58600;
-	case 0x0D: return 29300;
-	case 0x0E: return 14600;
-	case 0x0F: return 7300;
-	case 0x11: return 373600;
-	case 0x12: return 187200;
-	case 0x13: return 93800;
-	case 0x14: return 46900;
-	case 0x15: return 23400;
-	case 0x16: return 11700;
-	case 0x17: return 5800;
-	case 0x19: return 312000;
-	case 0x1A: return 156200;
-	case 0x1B: return 78200;
-	case 0x1C: return 39000;
-	case 0x1D: return 19500;
-	case 0x1E: return 9700;
-	case 0x1F: return 4800;
-	default: return 93800;
+	case 0x09:
+		return 467000;
+	case 0x0A:
+		return 234300;
+	case 0x0B:
+		return 117300;
+	case 0x0C:
+		return 58600;
+	case 0x0D:
+		return 29300;
+	case 0x0E:
+		return 14600;
+	case 0x0F:
+		return 7300;
+	case 0x11:
+		return 373600;
+	case 0x12:
+		return 187200;
+	case 0x13:
+		return 93800;
+	case 0x14:
+		return 46900;
+	case 0x15:
+		return 23400;
+	case 0x16:
+		return 11700;
+	case 0x17:
+		return 5800;
+	case 0x19:
+		return 312000;
+	case 0x1A:
+		return 156200;
+	case 0x1B:
+		return 78200;
+	case 0x1C:
+		return 39000;
+	case 0x1D:
+		return 19500;
+	case 0x1E:
+		return 9700;
+	case 0x1F:
+		return 4800;
+	default:
+		return 93800;
 	}
 }
 
@@ -642,7 +665,8 @@ int apply_fsk_config(void)
 		lora_dev = DEVICE_DT_GET(DT_ALIAS(lora0));
 		if (!device_is_ready(lora_dev)) {
 			status_msg = "Error: SX126x device not ready\r\n";
-			safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
+			safe_ring_buf_put(&rb_config_to_usb,
+					  (uint8_t *)status_msg,
 					  strlen(status_msg));
 			if (cdc2_dev)
 				uart_irq_tx_enable(cdc2_dev);
@@ -666,7 +690,8 @@ int apply_fsk_config(void)
 	if (cdc2_dev)
 		uart_irq_tx_enable(cdc2_dev);
 
-	/* Guard against impossible BW selections for configured bitrate/fdev. */
+	/* Guard against impossible BW selections for configured bitrate/fdev.
+	 */
 	uint32_t bw_hz = fsk_bw_reg_to_hz(catsniffer.fsk_config.bandwidth);
 	uint32_t required_hz = catsniffer.fsk_config.bitrate +
 			       (2 * catsniffer.fsk_config.fdev);
@@ -674,7 +699,8 @@ int apply_fsk_config(void)
 		catsniffer.fsk_config.bandwidth = 0x12; /* 187.2 kHz */
 		char warn_buf[128];
 		snprintf(warn_buf, sizeof(warn_buf),
-			 "WARN: FSK BW too narrow (%lu Hz < %lu Hz), forcing 0x12\r\n",
+			 "WARN: FSK BW too narrow (%lu Hz < %lu Hz), forcing "
+			 "0x12\r\n",
 			 (unsigned long)bw_hz, (unsigned long)required_hz);
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)warn_buf,
 				  strlen(warn_buf));
@@ -684,13 +710,12 @@ int apply_fsk_config(void)
 	}
 
 	/* Configure FSK using the driver API */
-	int ret = sx126x_fsk_config(lora_dev,
-				     catsniffer.fsk_config.frequency,
-				     catsniffer.fsk_config.bitrate,
-				     catsniffer.fsk_config.fdev,
-				     catsniffer.fsk_config.shaping,
-				     catsniffer.fsk_config.bandwidth,
-				     catsniffer.fsk_config.tx_power);
+	int ret = sx126x_fsk_config(lora_dev, catsniffer.fsk_config.frequency,
+				    catsniffer.fsk_config.bitrate,
+				    catsniffer.fsk_config.fdev,
+				    catsniffer.fsk_config.shaping,
+				    catsniffer.fsk_config.bandwidth,
+				    catsniffer.fsk_config.tx_power);
 	if (ret < 0) {
 		char err_buf[96];
 		snprintf(err_buf, sizeof(err_buf),
@@ -705,13 +730,13 @@ int apply_fsk_config(void)
 
 	/* Set packet parameters */
 	ret = sx126x_fsk_set_packet_params(lora_dev,
-					    catsniffer.fsk_config.preamble_len,
-					    catsniffer.fsk_config.sync_word,
-					    catsniffer.fsk_config.sync_word_len,
-					    catsniffer.fsk_config.fixed_length,
-					    catsniffer.fsk_config.payload_len,
-					    catsniffer.fsk_config.crc_on,
-					    catsniffer.fsk_config.whitening);
+					   catsniffer.fsk_config.preamble_len,
+					   catsniffer.fsk_config.sync_word,
+					   catsniffer.fsk_config.sync_word_len,
+					   catsniffer.fsk_config.fixed_length,
+					   catsniffer.fsk_config.payload_len,
+					   catsniffer.fsk_config.crc_on,
+					   catsniffer.fsk_config.whitening);
 	if (ret < 0) {
 		char err_buf[96];
 		snprintf(err_buf, sizeof(err_buf),
@@ -851,8 +876,10 @@ void process_lora_command(char *cmd_line)
 	/* FSK TX Test */
 	if (strncmp(cmd_line, "FSKTEST", 7) == 0) {
 		if (!catsniffer.fsk_initialized) {
-			status_msg = "ERROR: FSK not initialized. Use fsk_apply first.\r\n";
-			safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
+			status_msg = "ERROR: FSK not initialized. Use "
+				     "fsk_apply first.\r\n";
+			safe_ring_buf_put(&rb_config_to_usb,
+					  (uint8_t *)status_msg,
 					  strlen(status_msg));
 			if (cdc2_dev)
 				uart_irq_tx_enable(cdc2_dev);
@@ -871,7 +898,8 @@ void process_lora_command(char *cmd_line)
 			fsk_stop_rx();
 		}
 
-		int ret = sx126x_fsk_send(lora_dev, tx_data, sizeof(tx_data) - 1);
+		int ret =
+			sx126x_fsk_send(lora_dev, tx_data, sizeof(tx_data) - 1);
 		if (was_rx_active) {
 			int rx_ret = fsk_start_rx_async();
 			if (rx_ret < 0) {
@@ -879,7 +907,8 @@ void process_lora_command(char *cmd_line)
 				snprintf(warn_buf, sizeof(warn_buf),
 					 "WARN: FSK RX re-arm failed: %s\r\n",
 					 get_error_string(rx_ret));
-				safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)warn_buf,
+				safe_ring_buf_put(&rb_config_to_usb,
+						  (uint8_t *)warn_buf,
 						  strlen(warn_buf));
 				if (cdc2_dev) {
 					uart_irq_tx_enable(cdc2_dev);
@@ -887,8 +916,9 @@ void process_lora_command(char *cmd_line)
 			}
 		}
 
-		snprintf(response, sizeof(response), "FSK TX Result: %d (%s)\r\n",
-			 ret, get_error_string(ret));
+		snprintf(response, sizeof(response),
+			 "FSK TX Result: %d (%s)\r\n", ret,
+			 get_error_string(ret));
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)response,
 				  strlen(response));
 		if (cdc2_dev)
@@ -899,8 +929,10 @@ void process_lora_command(char *cmd_line)
 	/* FSK TX with hex data */
 	if (strncmp(cmd_line, "FSKTX ", 6) == 0) {
 		if (!catsniffer.fsk_initialized) {
-			status_msg = "ERROR: FSK not initialized. Use fsk_apply first.\r\n";
-			safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
+			status_msg = "ERROR: FSK not initialized. Use "
+				     "fsk_apply first.\r\n";
+			safe_ring_buf_put(&rb_config_to_usb,
+					  (uint8_t *)status_msg,
 					  strlen(status_msg));
 			if (cdc2_dev)
 				uart_irq_tx_enable(cdc2_dev);
@@ -916,8 +948,10 @@ void process_lora_command(char *cmd_line)
 
 			for (size_t i = 0; i < data_len; i++) {
 				char hex_byte[3] = { hex_data[i * 2],
-						     hex_data[i * 2 + 1], '\0' };
-				tx_data[i] = (uint8_t)strtoul(hex_byte, NULL, 16);
+						     hex_data[i * 2 + 1],
+						     '\0' };
+				tx_data[i] =
+					(uint8_t)strtoul(hex_byte, NULL, 16);
 			}
 
 			bool was_rx_active = fsk_async_rx_active;
@@ -931,7 +965,8 @@ void process_lora_command(char *cmd_line)
 				if (rx_ret < 0) {
 					char warn_buf[96];
 					snprintf(warn_buf, sizeof(warn_buf),
-						 "WARN: FSK RX re-arm failed: %s\r\n",
+						 "WARN: FSK RX re-arm failed: "
+						 "%s\r\n",
 						 get_error_string(rx_ret));
 					safe_ring_buf_put(&rb_config_to_usb,
 							  (uint8_t *)warn_buf,
@@ -960,14 +995,16 @@ void process_lora_command(char *cmd_line)
 	if (strncmp(cmd_line, "FSKRX", 5) == 0) {
 		if (!catsniffer.fsk_initialized) {
 			status_msg = "ERROR: FSK not initialized.\r\n";
-			safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
+			safe_ring_buf_put(&rb_config_to_usb,
+					  (uint8_t *)status_msg,
 					  strlen(status_msg));
 			if (cdc2_dev)
 				uart_irq_tx_enable(cdc2_dev);
 			return;
 		}
 
-		/* RadioLib-style: keep continuous async FSK RX armed on DIO1 IRQ. */
+		/* RadioLib-style: keep continuous async FSK RX armed on DIO1
+		 * IRQ. */
 		int ret = fsk_start_rx_async();
 		if (ret == 0) {
 			snprintf(response, sizeof(response),
@@ -977,7 +1014,8 @@ void process_lora_command(char *cmd_line)
 				 "FSK RX async already active\r\n");
 		} else {
 			snprintf(response, sizeof(response),
-				 "FSK RX start failed: %s\r\n", get_error_string(ret));
+				 "FSK RX start failed: %s\r\n",
+				 get_error_string(ret));
 		}
 
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)response,
@@ -1000,8 +1038,10 @@ void process_lora_command(char *cmd_line)
 
 	if (strncmp(cmd_line, "TXTEST", 6) == 0) {
 		if (is_fsk) {
-			status_msg = "ERROR: Modulation is FSK. Use FSKTEST/FSKTX or switch to LoRa.\r\n";
-			safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
+			status_msg = "ERROR: Modulation is FSK. Use "
+				     "FSKTEST/FSKTX or switch to LoRa.\r\n";
+			safe_ring_buf_put(&rb_config_to_usb,
+					  (uint8_t *)status_msg,
 					  strlen(status_msg));
 			if (cdc2_dev)
 				uart_irq_tx_enable(cdc2_dev);
@@ -1041,8 +1081,10 @@ void process_lora_command(char *cmd_line)
 
 	if (strncmp(cmd_line, "TX ", 3) == 0) {
 		if (is_fsk) {
-			status_msg = "ERROR: Modulation is FSK. Use FSKTX or switch to LoRa.\r\n";
-			safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
+			status_msg = "ERROR: Modulation is FSK. Use FSKTX or "
+				     "switch to LoRa.\r\n";
+			safe_ring_buf_put(&rb_config_to_usb,
+					  (uint8_t *)status_msg,
 					  strlen(status_msg));
 			if (cdc2_dev)
 				uart_irq_tx_enable(cdc2_dev);
@@ -1068,8 +1110,10 @@ void process_lora_command(char *cmd_line)
 
 			for (size_t i = 0; i < data_len; i++) {
 				char hex_byte[3] = { hex_data[i * 2],
-						     hex_data[i * 2 + 1], '\0' };
-				tx_data[i] = (uint8_t)strtoul(hex_byte, NULL, 16);
+						     hex_data[i * 2 + 1],
+						     '\0' };
+				tx_data[i] =
+					(uint8_t)strtoul(hex_byte, NULL, 16);
 			}
 
 			lora_stop_rx();
@@ -1092,7 +1136,8 @@ void process_lora_command(char *cmd_line)
 		return;
 	}
 
-	status_msg = "Available: TEST, TX <hex>, FSKTEST, FSKTX <hex>, FSKRX, FSKRXSTOP\r\n";
+	status_msg = "Available: TEST, TX <hex>, FSKTEST, FSKTX <hex>, FSKRX, "
+		     "FSKRXSTOP\r\n";
 	safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
 			  strlen(status_msg));
 	if (cdc2_dev)
@@ -1184,7 +1229,8 @@ static int fsk_start_rx_async(void)
 		return 0;
 	}
 
-	/* Recover if driver state was left busy but RX is not actually active. */
+	/* Recover if driver state was left busy but RX is not actually active.
+	 */
 	if (ret == -EBUSY) {
 		sx126x_fsk_recv_async(lora_dev, NULL, NULL);
 		k_sleep(K_MSEC(2));
@@ -1213,8 +1259,10 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 		}
 
 		/* Handle based on current modulation */
-		if (catsniffer.current_modulation == FSK_MOD_FSK && catsniffer.fsk_initialized) {
-			/* Keep FSK RX armed in both command and stream modes. */
+		if (catsniffer.current_modulation == FSK_MOD_FSK &&
+		    catsniffer.fsk_initialized) {
+			/* Keep FSK RX armed in both command and stream modes.
+			 */
 			(void)fsk_start_rx_async();
 			if (catsniffer.lora_mode == LORA_MODE_COMMAND) {
 				/* FSK Command Mode */
@@ -1228,57 +1276,76 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 						char c = usb_buf[i];
 						if (c == '\n' || c == '\r') {
 							if (cmd_len > 0) {
-								command_buffer[cmd_len] = '\0';
-								process_lora_command(command_buffer);
+								command_buffer
+									[cmd_len] =
+										'\0';
+								process_lora_command(
+									command_buffer);
 								cmd_len = 0;
 							}
-						} else if (cmd_len < sizeof(command_buffer) - 1) {
-							command_buffer[cmd_len++] = c;
+						} else if (cmd_len <
+							   sizeof(command_buffer) -
+								   1) {
+							command_buffer[cmd_len++] =
+								c;
 						}
 					}
 				}
 
 				/* Keep async FSK RX armed in command mode. */
-				} else {
+			} else {
 				/* FSK Stream Mode:
-				 * Keep async RX armed continuously; only pause for TX.
+				 * Keep async RX armed continuously; only pause
+				 * for TX.
 				 */
 				uint8_t tx_buffer[255];
 				int tx_len = safe_ring_buf_get(
 					&rb_usb_to_sx1262, tx_buffer,
 					sizeof(tx_buffer));
 
-					if (tx_len > 0) {
-						if (fsk_async_rx_active) {
-							fsk_stop_rx();
-						}
-						int ret = sx126x_fsk_send(lora_dev, tx_buffer, tx_len);
+				if (tx_len > 0) {
+					if (fsk_async_rx_active) {
+						fsk_stop_rx();
+					}
+					int ret = sx126x_fsk_send(
+						lora_dev, tx_buffer, tx_len);
 
 					if (ret < 0) {
 						char err_msg[64];
-						snprintf(err_msg, sizeof(err_msg),
-							 "FSK TX Error: %d\r\n", ret);
-						safe_ring_buf_put(&rb_sx1262_to_usb,
-								  (uint8_t *)err_msg, strlen(err_msg));
-							if (cdc1_dev)
-								uart_irq_tx_enable(cdc1_dev);
-						}
-						(void)fsk_start_rx_async();
-					} else {
-						int ret = fsk_start_rx_async();
-						if (ret < 0 && ret != -EBUSY) {
-							char err_msg[96];
-							snprintf(err_msg, sizeof(err_msg),
-								 "FSK RX async start error: %d (%s)\r\n",
-								 ret, get_error_string(ret));
-							safe_ring_buf_put(&rb_sx1262_to_usb,
-									  (uint8_t *)err_msg, strlen(err_msg));
-							if (cdc1_dev) {
-								uart_irq_tx_enable(cdc1_dev);
-							}
+						snprintf(err_msg,
+							 sizeof(err_msg),
+							 "FSK TX Error: %d\r\n",
+							 ret);
+						safe_ring_buf_put(
+							&rb_sx1262_to_usb,
+							(uint8_t *)err_msg,
+							strlen(err_msg));
+						if (cdc1_dev)
+							uart_irq_tx_enable(
+								cdc1_dev);
+					}
+					(void)fsk_start_rx_async();
+				} else {
+					int ret = fsk_start_rx_async();
+					if (ret < 0 && ret != -EBUSY) {
+						char err_msg[96];
+						snprintf(err_msg,
+							 sizeof(err_msg),
+							 "FSK RX async start "
+							 "error: %d (%s)\r\n",
+							 ret,
+							 get_error_string(ret));
+						safe_ring_buf_put(
+							&rb_sx1262_to_usb,
+							(uint8_t *)err_msg,
+							strlen(err_msg));
+						if (cdc1_dev) {
+							uart_irq_tx_enable(
+								cdc1_dev);
 						}
 					}
 				}
+			}
 		} else if (catsniffer.current_modulation == FSK_MOD_LORA) {
 			/* LoRa Mode */
 			lora_start_rx_async();
@@ -1294,12 +1361,18 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 
 						if (c == '\n' || c == '\r') {
 							if (cmd_len > 0) {
-								command_buffer[cmd_len] = '\0';
-								process_lora_command(command_buffer);
+								command_buffer
+									[cmd_len] =
+										'\0';
+								process_lora_command(
+									command_buffer);
 								cmd_len = 0;
 							}
-						} else if (cmd_len < sizeof(command_buffer) - 1) {
-							command_buffer[cmd_len++] = c;
+						} else if (cmd_len <
+							   sizeof(command_buffer) -
+								   1) {
+							command_buffer[cmd_len++] =
+								c;
 						}
 					}
 				}
