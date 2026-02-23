@@ -58,7 +58,7 @@ jobs:
           pip install west
           west init -l RP2040/catsniffer --mf west.yml
           cd "${GITHUB_WORKSPACE}/RP2040"
-          west update --fetch-opt="--depth=1"
+          west update
           west zephyr-export
           pip install -r zephyr/scripts/requirements-build-test.txt
 
