@@ -43,6 +43,7 @@ static void cmd_band2(char *args);
 static void cmd_band3(char *args);
 static void cmd_reboot(char *args);
 static void cmd_status(char *args);
+static void cmd_loss_reset(char *args);
 static void cmd_fw_version(char *args);
 static void cmd_lora_freq(char *args);
 static void cmd_lora_sf(char *args);
@@ -133,6 +134,7 @@ static const shell_cmd_t commands[] = {
 	{ "band3", cmd_band3, "LoRa band", false },
 	{ "reboot", cmd_reboot, "RP2040 USB bootloader", false },
 	{ "status", cmd_status, "Device status", false },
+	{ "loss_reset", cmd_loss_reset, "Reset CC1352 loss counters", false },
 	{ "fw_version", cmd_fw_version, "Show firmware build version", false },
 	{ "lora_freq", cmd_lora_freq, "Set frequency (Hz)", true },
 	{ "lora_sf", cmd_lora_sf, "Set spreading factor", true },
@@ -260,6 +262,13 @@ static void cmd_status(char *args)
 		 catsniffer.uart_overrun_count,
 		 catsniffer.ring_overflow_count);
 	shell_reply(loss_buf);
+}
+
+static void cmd_loss_reset(char *args)
+{
+	catsniffer.uart_overrun_count = 0;
+	catsniffer.ring_overflow_count = 0;
+	shell_reply("CC1352 loss counters reset\r\n");
 }
 
 static void cmd_fw_version(char *args)
