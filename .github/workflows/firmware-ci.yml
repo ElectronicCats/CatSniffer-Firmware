@@ -77,12 +77,18 @@ jobs:
             -d "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico" -- \
             -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr"
 
+      - name: Rename build artifacts
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          mkdir -p ci-artifacts
+          cp RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.uf2 ci-artifacts/catsniffer-${SHORT_SHA}.uf2
+          cp RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.hex ci-artifacts/catsniffer-${SHORT_SHA}.hex
+          cp RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.elf ci-artifacts/catsniffer-${SHORT_SHA}.elf
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: catsniffer-rpi-pico-${{ github.sha }}
           if-no-files-found: error
-          path: |
-            RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.uf2
-            RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.hex
-            RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.elf
+          path: ci-artifacts/
