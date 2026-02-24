@@ -11,6 +11,7 @@ manifest:
     - name: zephyr
       remote: wero1414
       revision: fsk-native-driver
+      west-commands: scripts/west-commands.yml
     - name: hal_rpi_pico
       remote: zephyrproject
       revision: 562b41e10a1d8b1a761b253b107c5c6a84cf4535

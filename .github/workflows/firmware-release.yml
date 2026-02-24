@@ -36,7 +36,7 @@ jobs:
           echo "CATSNIFFER_FW_VERSION=${rel}" >> "${GITHUB_ENV}"
 
       - name: Install system dependencies
-        run: sudo apt-get install -y ninja-build cmake
+        run: sudo apt-get install -y ninja-build cmake device-tree-compiler gperf
 
       - name: Setup Python
         uses: actions/setup-python@v5
