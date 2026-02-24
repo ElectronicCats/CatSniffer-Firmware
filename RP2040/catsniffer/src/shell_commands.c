@@ -259,8 +259,7 @@ static void cmd_status(char *args)
 	char loss_buf[96];
 	snprintf(loss_buf, sizeof(loss_buf),
 		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes\r\n",
-		 catsniffer.uart_overrun_count,
-		 catsniffer.ring_overflow_count);
+		 catsniffer.uart_overrun_count, catsniffer.ring_overflow_count);
 	shell_reply(loss_buf);
 }
 
