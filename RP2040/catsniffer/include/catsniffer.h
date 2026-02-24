@@ -22,7 +22,7 @@
 #include <fw_version.h>
 
 // Ring buffer and command buffer sizes
-#define RING_BUF_SIZE 8192
+#define RING_BUF_SIZE 16384
 #define COMMAND_BUF_SIZE 256
 
 // Define Thead priorities
