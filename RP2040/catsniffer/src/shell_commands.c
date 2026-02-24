@@ -253,6 +253,13 @@ static void cmd_status(char *args)
 		 lora_status, mode_str, CATSNIFFER_FW_VERSION, fw_id_str,
 		 fw_type);
 	shell_reply(buf);
+
+	char loss_buf[96];
+	snprintf(loss_buf, sizeof(loss_buf),
+		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes\r\n",
+		 catsniffer.uart_overrun_count,
+		 catsniffer.ring_overflow_count);
+	shell_reply(loss_buf);
 }
 
 static void cmd_fw_version(char *args)

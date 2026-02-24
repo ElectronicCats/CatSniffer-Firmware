@@ -206,10 +206,21 @@ static void cc1352_uart_interrupt_handler(const struct device *dev,
 {
 	while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
 		if (uart_irq_rx_ready(dev)) {
+			/* Check for hardware UART FIFO overrun */
+			int err = uart_err_check(dev);
+			if (err > 0 && (err & UART_ERROR_OVERRUN)) {
+				catsniffer.uart_overrun_count++;
+			}
+
 			uint8_t buf[64];
 			int len = uart_fifo_read(dev, buf, sizeof(buf));
 			if (len > 0) {
-				safe_ring_buf_put(&rb_cc1352_to_usb, buf, len);
+				uint32_t written = safe_ring_buf_put(
+					&rb_cc1352_to_usb, buf, len);
+				if (written < (uint32_t)len) {
+					catsniffer.ring_overflow_count +=
+						(len - written);
+				}
 				uart_irq_tx_enable(cdc0_dev);
 			}
 		}

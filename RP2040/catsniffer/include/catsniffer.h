@@ -22,7 +22,7 @@
 #include <fw_version.h>
 
 // Ring buffer and command buffer sizes
-#define RING_BUF_SIZE 2048
+#define RING_BUF_SIZE 8192
 #define COMMAND_BUF_SIZE 256
 
 // Define Thead priorities
@@ -127,6 +127,9 @@ typedef struct {
 	uint8_t current_modulation; // FSK_MOD_LORA or FSK_MOD_FSK
 	fsk_config_t fsk_config;    // Current FSK configuration
 	bool fsk_initialized;	    // Track FSK initialization state
+	// Packet loss counters (CC1352 UART bridge)
+	uint32_t uart_overrun_count;  // UART hardware FIFO overrun events
+	uint32_t ring_overflow_count; // Bytes dropped due to ring buffer full
 } catsniffer_t;
 
 // Global catsniffer instance
