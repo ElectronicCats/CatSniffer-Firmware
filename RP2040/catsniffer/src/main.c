@@ -421,7 +421,7 @@ void change_mode(unsigned long new_mode)
 		gpio_pin_configure_dt(&pin_boot, GPIO_INPUT | GPIO_PULL_UP);
 		reset_cc1352();
 		catsniffer.led_interval = 1000;
-		change_baud(921600);
+		change_baud(2000000);
 		break;
 	}
 }
