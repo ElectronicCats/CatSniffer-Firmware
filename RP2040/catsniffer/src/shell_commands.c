@@ -74,50 +74,50 @@ static void cmd_fsk_apply(char *args);
 static void cmd_modulation(char *args);
 static void cmd_radio(char *args);
 
-static const char *fsk_bw_reg_to_khz_str(uint8_t bw_reg)
+static const char *fsk_bw_enum_to_khz_str(enum lora_fsk_bandwidth bw)
 {
-	switch (bw_reg) {
-	case 0x1F:
+	switch (bw) {
+	case FSK_BW_4_KHZ:
 		return "4.8";
-	case 0x17:
+	case FSK_BW_5_KHZ:
 		return "5.8";
-	case 0x0F:
+	case FSK_BW_7_KHZ:
 		return "7.3";
-	case 0x1E:
+	case FSK_BW_9_KHZ:
 		return "9.7";
-	case 0x16:
+	case FSK_BW_11_KHZ:
 		return "11.7";
-	case 0x0E:
+	case FSK_BW_14_KHZ:
 		return "14.6";
-	case 0x1D:
+	case FSK_BW_19_KHZ:
 		return "19.5";
-	case 0x15:
+	case FSK_BW_23_KHZ:
 		return "23.4";
-	case 0x0D:
+	case FSK_BW_29_KHZ:
 		return "29.3";
-	case 0x1C:
+	case FSK_BW_39_KHZ:
 		return "39.0";
-	case 0x14:
+	case FSK_BW_46_KHZ:
 		return "46.9";
-	case 0x0C:
+	case FSK_BW_58_KHZ:
 		return "58.6";
-	case 0x1B:
+	case FSK_BW_78_KHZ:
 		return "78.2";
-	case 0x13:
+	case FSK_BW_93_KHZ:
 		return "93.8";
-	case 0x0B:
+	case FSK_BW_117_KHZ:
 		return "117.3";
-	case 0x1A:
+	case FSK_BW_156_KHZ:
 		return "156.2";
-	case 0x12:
+	case FSK_BW_187_KHZ:
 		return "187.2";
-	case 0x0A:
+	case FSK_BW_234_KHZ:
 		return "234.3";
-	case 0x19:
+	case FSK_BW_312_KHZ:
 		return "312.0";
-	case 0x11:
+	case FSK_BW_373_KHZ:
 		return "373.6";
-	case 0x09:
+	case FSK_BW_467_KHZ:
 		return "467.0";
 	default:
 		return "unknown";
@@ -143,7 +143,7 @@ static const shell_cmd_t commands[] = {
 	{ "lora_power", cmd_lora_power, "Set TX power (dBm)", true },
 	{ "lora_mode", cmd_lora_mode, "stream|command mode", true },
 	{ "lora_preamble", cmd_lora_preamble, "Set preamble length", true },
-	{ "lora_syncword", cmd_lora_syncword, "private|public network", true },
+	{ "lora_syncword", cmd_lora_syncword, "Set sync word (private|public|0xNN)", true },
 	{ "lora_iq", cmd_lora_iq, "normal|inverted IQ", true },
 	{ "lora_config", cmd_lora_config, "Show LoRa config", false },
 	{ "lora_apply", cmd_lora_apply, "Apply pending config", false },
@@ -251,7 +251,7 @@ static void cmd_status(char *args)
 		 "%s, "
 		 "CC1352 FW: %s (%s)\r\n",
 		 catsniffer.mode, catsniffer.band,
-		 catsniffer.current_modulation == FSK_MOD_FSK ? "FSK" : "LoRa",
+		 catsniffer.current_modulation == LORA_MOD_FSK ? "FSK" : "LoRa",
 		 lora_status, mode_str, CATSNIFFER_FW_VERSION, fw_id_str,
 		 fw_type);
 	shell_reply(buf);
@@ -620,20 +620,37 @@ static void cmd_lora_syncword(char *args)
 		args++;
 
 	if (*args == '\0') {
-		shell_reply("Usage: lora_syncword <private|public>\r\n");
+		shell_reply("Usage: lora_syncword <private|public|0xNN>\r\n");
+		shell_reply("  private  Private network (reg 0x1424)\r\n");
+		shell_reply("  public   Public/LoRaWAN (reg 0x3444)\r\n");
+		shell_reply("  0xNN     Custom, e.g. 0x2D for Meshtastic (reg 0x24D4)\r\n");
 		return;
 	}
 
 	if (strncmp(args, "private", 7) == 0) {
 		catsniffer.lora_config.public_network = false;
+		catsniffer.lora_config.lora_sync_word = 0;
 		catsniffer.lora_config.config_pending = true;
-		shell_reply("Sync word set to PRIVATE (0x12) (pending)\r\n");
+		shell_reply("Sync word: PRIVATE (reg 0x1424) (pending)\r\n");
 	} else if (strncmp(args, "public", 6) == 0) {
 		catsniffer.lora_config.public_network = true;
+		catsniffer.lora_config.lora_sync_word = 0;
 		catsniffer.lora_config.config_pending = true;
-		shell_reply("Sync word set to PUBLIC (0x34) (pending)\r\n");
+		shell_reply("Sync word: PUBLIC/LoRaWAN (reg 0x3444) (pending)\r\n");
+	} else if (args[0] == '0' && (args[1] == 'x' || args[1] == 'X')) {
+		uint8_t sw = (uint8_t)strtoul(args + 2, NULL, 16);
+		catsniffer.lora_config.lora_sync_word = sw;
+		catsniffer.lora_config.config_pending = true;
+		/* Compute register value for display only */
+		uint16_t reg = (uint16_t)(((sw & 0xF0U) | 0x04U) << 8) |
+			       (((sw & 0x0FU) << 4) | 0x04U);
+		char sw_buf[64];
+		snprintf(sw_buf, sizeof(sw_buf),
+			 "Sync word: 0x%02X (reg 0x%04X) (pending)\r\n",
+			 sw, reg);
+		shell_reply(sw_buf);
 	} else {
-		shell_reply("Error: Must be 'private' or 'public'\r\n");
+		shell_reply("Error: Use 'private', 'public', or '0xNN'\r\n");
 	}
 }
 
@@ -673,9 +690,18 @@ static void cmd_lora_config(char *args)
 		catsniffer.lora_config.config_pending ? " (pending apply)" : "";
 	const char *iq_str = catsniffer.lora_config.iq_inverted ? "Inverted" :
 								  "Normal";
-	const char *syncword_str = catsniffer.lora_config.public_network ?
-					   "Public (0x34)" :
-					   "Private (0x12)";
+	char syncword_str[32];
+	uint8_t sw = catsniffer.lora_config.lora_sync_word;
+	if (sw != 0) {
+		uint16_t reg = (uint16_t)(((sw & 0xF0U) | 0x04U) << 8) |
+			       (((sw & 0x0FU) << 4) | 0x04U);
+		snprintf(syncword_str, sizeof(syncword_str),
+			 "0x%02X (reg 0x%04X)", sw, reg);
+	} else if (catsniffer.lora_config.public_network) {
+		snprintf(syncword_str, sizeof(syncword_str), "Public (0x34)");
+	} else {
+		snprintf(syncword_str, sizeof(syncword_str), "Private (0x12)");
+	}
 
 	snprintf(buf, sizeof(buf),
 		 "LoRa Configuration:%s\r\n"
@@ -824,60 +850,62 @@ static void cmd_fsk_bw(char *args)
 		return;
 	}
 
-	/* Map common bandwidths to register values */
-	uint8_t bw_reg;
+	/* Map the user-supplied kHz value to the nearest lora_fsk_bandwidth
+	 * enum entry (public API values are nominal kHz, e.g. FSK_BW_117_KHZ).
+	 */
+	enum lora_fsk_bandwidth bw_enum;
 	float bw_khz = atof(args);
 
-	/* Use predefined constants from sx126x_regs.h */
-	if (bw_khz <= 5)
-		bw_reg = 0x1F; /* 4.8 kHz */
-	else if (bw_khz <= 6)
-		bw_reg = 0x17; /* 5.8 kHz */
-	else if (bw_khz <= 8)
-		bw_reg = 0x0F; /* 7.3 kHz */
-	else if (bw_khz <= 10)
-		bw_reg = 0x1E; /* 9.7 kHz */
-	else if (bw_khz <= 12)
-		bw_reg = 0x16; /* 11.7 kHz */
-	else if (bw_khz <= 15)
-		bw_reg = 0x0E; /* 14.6 kHz */
-	else if (bw_khz <= 20)
-		bw_reg = 0x1D; /* 19.5 kHz */
-	else if (bw_khz <= 24)
-		bw_reg = 0x15; /* 23.4 kHz */
-	else if (bw_khz <= 30)
-		bw_reg = 0x0D; /* 29.3 kHz */
-	else if (bw_khz <= 40)
-		bw_reg = 0x1C; /* 39.0 kHz */
-	else if (bw_khz <= 50)
-		bw_reg = 0x14; /* 46.9 kHz */
-	else if (bw_khz <= 60)
-		bw_reg = 0x0C; /* 58.6 kHz */
-	else if (bw_khz <= 80)
-		bw_reg = 0x1B; /* 78.2 kHz */
-	else if (bw_khz <= 100)
-		bw_reg = 0x13; /* 93.8 kHz */
-	else if (bw_khz <= 120)
-		bw_reg = 0x0B; /* 117.3 kHz */
-	else if (bw_khz <= 160)
-		bw_reg = 0x1A; /* 156.2 kHz */
-	else if (bw_khz <= 190)
-		bw_reg = 0x12; /* 187.2 kHz */
-	else if (bw_khz <= 240)
-		bw_reg = 0x0A; /* 234.3 kHz */
-	else if (bw_khz <= 320)
-		bw_reg = 0x19; /* 312.0 kHz */
-	else if (bw_khz <= 380)
-		bw_reg = 0x11; /* 373.6 kHz */
+	if (bw_khz <= 5.0f)
+		bw_enum = FSK_BW_4_KHZ;   /* ~4.8 kHz */
+	else if (bw_khz <= 6.0f)
+		bw_enum = FSK_BW_5_KHZ;   /* ~5.8 kHz */
+	else if (bw_khz <= 8.0f)
+		bw_enum = FSK_BW_7_KHZ;   /* ~7.3 kHz */
+	else if (bw_khz <= 10.0f)
+		bw_enum = FSK_BW_9_KHZ;   /* ~9.7 kHz */
+	else if (bw_khz <= 12.0f)
+		bw_enum = FSK_BW_11_KHZ;  /* ~11.7 kHz */
+	else if (bw_khz <= 15.0f)
+		bw_enum = FSK_BW_14_KHZ;  /* ~14.6 kHz */
+	else if (bw_khz <= 20.0f)
+		bw_enum = FSK_BW_19_KHZ;  /* ~19.5 kHz */
+	else if (bw_khz <= 24.0f)
+		bw_enum = FSK_BW_23_KHZ;  /* ~23.4 kHz */
+	else if (bw_khz <= 30.0f)
+		bw_enum = FSK_BW_29_KHZ;  /* ~29.3 kHz */
+	else if (bw_khz <= 40.0f)
+		bw_enum = FSK_BW_39_KHZ;  /* ~39.0 kHz */
+	else if (bw_khz <= 50.0f)
+		bw_enum = FSK_BW_46_KHZ;  /* ~46.9 kHz */
+	else if (bw_khz <= 60.0f)
+		bw_enum = FSK_BW_58_KHZ;  /* ~58.6 kHz */
+	else if (bw_khz <= 80.0f)
+		bw_enum = FSK_BW_78_KHZ;  /* ~78.2 kHz */
+	else if (bw_khz <= 100.0f)
+		bw_enum = FSK_BW_93_KHZ;  /* ~93.8 kHz */
+	else if (bw_khz <= 120.0f)
+		bw_enum = FSK_BW_117_KHZ; /* ~117.3 kHz */
+	else if (bw_khz <= 160.0f)
+		bw_enum = FSK_BW_156_KHZ; /* ~156.2 kHz */
+	else if (bw_khz <= 190.0f)
+		bw_enum = FSK_BW_187_KHZ; /* ~187.2 kHz */
+	else if (bw_khz <= 240.0f)
+		bw_enum = FSK_BW_234_KHZ; /* ~234.3 kHz */
+	else if (bw_khz <= 320.0f)
+		bw_enum = FSK_BW_312_KHZ; /* ~312.0 kHz */
+	else if (bw_khz <= 380.0f)
+		bw_enum = FSK_BW_373_KHZ; /* ~373.6 kHz */
 	else
-		bw_reg = 0x09; /* 467.0 kHz */
+		bw_enum = FSK_BW_467_KHZ; /* ~467.0 kHz */
 
-	catsniffer.fsk_config.bandwidth = bw_reg;
+	catsniffer.fsk_config.bandwidth = bw_enum;
 	catsniffer.fsk_config.config_pending = true;
 
 	char buf[64];
 	snprintf(buf, sizeof(buf),
-		 "FSK RX bandwidth set (reg=0x%02x) (pending)\r\n", bw_reg);
+		 "FSK RX bandwidth set to %s kHz (pending)\r\n",
+		 fsk_bw_enum_to_khz_str(bw_enum));
 	shell_reply(buf);
 }
 
@@ -1089,7 +1117,7 @@ static void cmd_fsk_payload(char *args)
 
 static void cmd_fsk_bt(char *args)
 {
-	uint8_t shaping;
+	enum lora_fsk_shaping shaping;
 
 	while (*args && *args != ' ')
 		args++;
@@ -1102,15 +1130,15 @@ static void cmd_fsk_bt(char *args)
 	}
 
 	if (strncmp(args, "off", 3) == 0) {
-		shaping = FSK_BT_OFF;
+		shaping = LORA_FSK_SHAPING_NONE;
 	} else if (strncmp(args, "0.3", 3) == 0) {
-		shaping = FSK_BT_03;
+		shaping = LORA_FSK_SHAPING_GAUSS_BT_0_3;
 	} else if (strncmp(args, "0.5", 3) == 0) {
-		shaping = FSK_BT_05;
+		shaping = LORA_FSK_SHAPING_GAUSS_BT_0_5;
 	} else if (strncmp(args, "0.7", 3) == 0) {
-		shaping = FSK_BT_07;
+		shaping = LORA_FSK_SHAPING_GAUSS_BT_0_7;
 	} else if (strncmp(args, "1.0", 3) == 0 || strcmp(args, "1") == 0) {
-		shaping = FSK_BT_10;
+		shaping = LORA_FSK_SHAPING_GAUSS_BT_1_0;
 	} else {
 		shell_reply("Error: Must be off, 0.3, 0.5, 0.7 or 1.0\r\n");
 		return;
@@ -1132,23 +1160,23 @@ static void cmd_fsk_config(char *args)
 	const char *pkt_mode_str =
 		catsniffer.fsk_config.fixed_length ? "FIXED" : "VARIABLE";
 	const char *bw_khz_str =
-		fsk_bw_reg_to_khz_str(catsniffer.fsk_config.bandwidth);
+		fsk_bw_enum_to_khz_str(catsniffer.fsk_config.bandwidth);
 	const char *bt_str;
 
 	switch (catsniffer.fsk_config.shaping) {
-	case FSK_BT_OFF:
+	case LORA_FSK_SHAPING_NONE:
 		bt_str = "OFF";
 		break;
-	case FSK_BT_03:
+	case LORA_FSK_SHAPING_GAUSS_BT_0_3:
 		bt_str = "0.3";
 		break;
-	case FSK_BT_05:
+	case LORA_FSK_SHAPING_GAUSS_BT_0_5:
 		bt_str = "0.5";
 		break;
-	case FSK_BT_07:
+	case LORA_FSK_SHAPING_GAUSS_BT_0_7:
 		bt_str = "0.7";
 		break;
-	case FSK_BT_10:
+	case LORA_FSK_SHAPING_GAUSS_BT_1_0:
 		bt_str = "1.0";
 		break;
 	default:
@@ -1170,7 +1198,7 @@ static void cmd_fsk_config(char *args)
 		 "  Frequency: %u Hz\r\n"
 		 "  Bitrate: %u bps\r\n"
 		 "  Freq Deviation: %u Hz\r\n"
-		 "  RX Bandwidth: 0x%02X (%s kHz)\r\n"
+		 "  RX Bandwidth: %s kHz\r\n"
 		 "  TX Power: %d dBm\r\n"
 		 "  Gaussian BT: %s\r\n"
 		 "  Preamble Length: %u bytes\r\n"
@@ -1182,12 +1210,12 @@ static void cmd_fsk_config(char *args)
 		 "  Current Modulation: %s\r\n",
 		 pending_str, catsniffer.fsk_config.frequency,
 		 catsniffer.fsk_config.bitrate, catsniffer.fsk_config.fdev,
-		 catsniffer.fsk_config.bandwidth, bw_khz_str,
+		 bw_khz_str,
 		 catsniffer.fsk_config.tx_power, bt_str,
 		 catsniffer.fsk_config.preamble_len, sync_str,
 		 catsniffer.fsk_config.sync_word_len, pkt_mode_str,
 		 catsniffer.fsk_config.payload_len, crc_str, whitening_str,
-		 catsniffer.current_modulation == FSK_MOD_FSK ? "FSK" : "LoRa");
+		 catsniffer.current_modulation == LORA_MOD_FSK ? "FSK" : "LoRa");
 	shell_reply(buf);
 }
 
@@ -1221,7 +1249,7 @@ static void cmd_modulation(char *args)
 		char buf[64];
 		shell_reply("Usage: modulation <lora|fsk>\r\n");
 		snprintf(buf, sizeof(buf), "  Current: %s\r\n",
-			 catsniffer.current_modulation == FSK_MOD_FSK ? "FSK" :
+			 catsniffer.current_modulation == LORA_MOD_FSK ? "FSK" :
 									"LoRa");
 		shell_reply(buf);
 		return;

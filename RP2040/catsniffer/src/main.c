@@ -7,8 +7,7 @@
 #include "fw_metadata.h"
 #include "shell_commands.h"
 
-/* Include SX126x driver header for FSK functions */
-#include <sx126x.h>
+/* lora.h (via catsniffer.h) provides the complete public LoRa/FSK API */
 
 LOG_MODULE_REGISTER(catsniffer_main, LOG_LEVEL_INF);
 
@@ -104,7 +103,7 @@ void lora_rx_cb(const struct device *dev, uint8_t *data, uint16_t size,
 
 	/* If LoRa callback is hit while we are in FSK mode, force stop stale
 	 * RX. */
-	if (catsniffer.current_modulation == FSK_MOD_FSK) {
+	if (catsniffer.current_modulation == LORA_MOD_FSK) {
 		const char *warn_msg = "WARN: LORA RX callback active in FSK "
 				       "mode, forcing RX stop\r\n";
 		safe_ring_buf_put(&rb_sx1262_to_usb, (uint8_t *)warn_msg,
@@ -114,7 +113,7 @@ void lora_rx_cb(const struct device *dev, uint8_t *data, uint16_t size,
 		}
 
 		lora_recv_async(lora_dev, NULL, NULL);
-		sx126x_fsk_recv_async(lora_dev, NULL, NULL);
+		lora_recv_async(lora_dev, NULL, NULL);
 		lora_async_rx_active = false;
 		fsk_async_rx_active = false;
 		return;
@@ -149,7 +148,7 @@ static void fsk_rx_cb(const struct device *dev, uint8_t *data, uint16_t size,
 	ARG_UNUSED(user_data);
 
 	/* Ignore stale callback after switching back to LoRa mode. */
-	if (catsniffer.current_modulation != FSK_MOD_FSK) {
+	if (catsniffer.current_modulation != LORA_MOD_FSK) {
 		return;
 	}
 
@@ -527,6 +526,7 @@ int initialize_lora(void)
 	config.tx = false; // Start in RX mode to enable receiving
 	config.iq_inverted = catsniffer.lora_config.iq_inverted;
 	config.public_network = catsniffer.lora_config.public_network;
+	config.lora_sync_word = catsniffer.lora_config.lora_sync_word;
 
 	int ret = lora_config(lora_dev, &config);
 	if (ret < 0) {
@@ -587,6 +587,8 @@ int apply_lora_config(void)
 	config.tx = false; // Configure for RX mode
 	config.iq_inverted = catsniffer.lora_config.iq_inverted;
 	config.public_network = catsniffer.lora_config.public_network;
+	/* Non-zero overrides public_network with a custom network-ID byte. */
+	config.lora_sync_word = catsniffer.lora_config.lora_sync_word;
 
 	int ret = lora_config(lora_dev, &config);
 
@@ -618,54 +620,15 @@ int apply_lora_config(void)
 /* FSK/GFSK Functions                           */
 /* ============================================ */
 
-static uint32_t fsk_bw_reg_to_hz(uint8_t bw_reg)
+/* Convert enum lora_fsk_bandwidth (nominal kHz) to Hz for guard checks. */
+static uint32_t fsk_bw_enum_to_hz(enum lora_fsk_bandwidth bw)
 {
-	switch (bw_reg) {
-	case 0x09:
-		return 467000;
-	case 0x0A:
-		return 234300;
-	case 0x0B:
-		return 117300;
-	case 0x0C:
-		return 58600;
-	case 0x0D:
-		return 29300;
-	case 0x0E:
-		return 14600;
-	case 0x0F:
-		return 7300;
-	case 0x11:
-		return 373600;
-	case 0x12:
-		return 187200;
-	case 0x13:
-		return 93800;
-	case 0x14:
-		return 46900;
-	case 0x15:
-		return 23400;
-	case 0x16:
-		return 11700;
-	case 0x17:
-		return 5800;
-	case 0x19:
-		return 312000;
-	case 0x1A:
-		return 156200;
-	case 0x1B:
-		return 78200;
-	case 0x1C:
-		return 39000;
-	case 0x1D:
-		return 19500;
-	case 0x1E:
-		return 9700;
-	case 0x1F:
-		return 4800;
-	default:
-		return 93800;
-	}
+	/* Each enum value is the nominal bandwidth in kHz; multiply by 1000.
+	 * This is a close approximation (e.g. FSK_BW_117_KHZ=117 → 117000 Hz
+	 * vs. the exact 117300 Hz), which is accurate enough for the sanity
+	 * guard below.
+	 */
+	return (uint32_t)bw * 1000U;
 }
 
 int apply_fsk_config(void)
@@ -689,7 +652,7 @@ int apply_fsk_config(void)
 	catsniffer.lora_config_lock = true;
 
 	/* Stop any ongoing RX activity before reconfiguration */
-	sx126x_fsk_recv_async(lora_dev, NULL, NULL);
+	lora_recv_async(lora_dev, NULL, NULL);
 	fsk_async_rx_active = false;
 	lora_recv_async(lora_dev, NULL, NULL);
 	lora_async_rx_active = false;
@@ -701,17 +664,16 @@ int apply_fsk_config(void)
 	if (cdc2_dev)
 		uart_irq_tx_enable(cdc2_dev);
 
-	/* Guard against impossible BW selections for configured bitrate/fdev.
-	 */
-	uint32_t bw_hz = fsk_bw_reg_to_hz(catsniffer.fsk_config.bandwidth);
+	/* Guard against impossible BW selections for configured bitrate/fdev. */
+	uint32_t bw_hz = fsk_bw_enum_to_hz(catsniffer.fsk_config.bandwidth);
 	uint32_t required_hz = catsniffer.fsk_config.bitrate +
 			       (2 * catsniffer.fsk_config.fdev);
 	if (bw_hz < required_hz) {
-		catsniffer.fsk_config.bandwidth = 0x12; /* 187.2 kHz */
+		catsniffer.fsk_config.bandwidth = FSK_BW_187_KHZ;
 		char warn_buf[128];
 		snprintf(warn_buf, sizeof(warn_buf),
 			 "WARN: FSK BW too narrow (%lu Hz < %lu Hz), forcing "
-			 "0x12\r\n",
+			 "FSK_BW_187_KHZ\r\n",
 			 (unsigned long)bw_hz, (unsigned long)required_hz);
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)warn_buf,
 				  strlen(warn_buf));
@@ -720,38 +682,31 @@ int apply_fsk_config(void)
 		}
 	}
 
-	/* Configure FSK using the driver API */
-	int ret = sx126x_fsk_config(lora_dev, catsniffer.fsk_config.frequency,
-				    catsniffer.fsk_config.bitrate,
-				    catsniffer.fsk_config.fdev,
-				    catsniffer.fsk_config.shaping,
-				    catsniffer.fsk_config.bandwidth,
-				    catsniffer.fsk_config.tx_power);
-	if (ret < 0) {
-		char err_buf[96];
-		snprintf(err_buf, sizeof(err_buf),
-			 "ERROR: FSK config failed (%d)\r\n", ret);
-		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)err_buf,
-				  strlen(err_buf));
-		if (cdc2_dev)
-			uart_irq_tx_enable(cdc2_dev);
-		catsniffer.lora_config_lock = false;
-		return ret;
-	}
+	/* Configure FSK using the public lora_config() API */
+	fsk_config_t *f = &catsniffer.fsk_config;
+	struct lora_modem_config cfg = {0};
 
-	/* Set packet parameters */
-	ret = sx126x_fsk_set_packet_params(lora_dev,
-					   catsniffer.fsk_config.preamble_len,
-					   catsniffer.fsk_config.sync_word,
-					   catsniffer.fsk_config.sync_word_len,
-					   catsniffer.fsk_config.fixed_length,
-					   catsniffer.fsk_config.payload_len,
-					   catsniffer.fsk_config.crc_on,
-					   catsniffer.fsk_config.whitening);
+	cfg.modulation       = LORA_MOD_FSK;
+	cfg.frequency        = f->frequency;
+	cfg.tx_power         = f->tx_power;
+	cfg.tx               = false; /* start in RX mode */
+	cfg.fsk.bitrate      = f->bitrate;
+	cfg.fsk.fdev         = f->fdev;
+	cfg.fsk.shaping      = f->shaping;
+	cfg.fsk.bandwidth    = f->bandwidth;
+	cfg.fsk.preamble_len = f->preamble_len;
+	memcpy(cfg.fsk.sync_word, f->sync_word, f->sync_word_len);
+	cfg.fsk.sync_word_len = f->sync_word_len;
+	cfg.fsk.variable_len  = !f->fixed_length;
+	cfg.fsk.payload_len   = f->payload_len;
+	cfg.fsk.crc_on        = f->crc_on;
+	cfg.fsk.whitening     = f->whitening;
+
+	int ret = lora_config(lora_dev, &cfg);
 	if (ret < 0) {
 		char err_buf[96];
 		snprintf(err_buf, sizeof(err_buf),
-			 "ERROR: FSK packet params failed (%d)\r\n", ret);
+			 "ERROR: FSK lora_config failed (%d)\r\n", ret);
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)err_buf,
 				  strlen(err_buf));
 		if (cdc2_dev)
@@ -761,7 +716,7 @@ int apply_fsk_config(void)
 	}
 
 	catsniffer.fsk_initialized = true;
-	catsniffer.current_modulation = FSK_MOD_FSK;
+	catsniffer.current_modulation = LORA_MOD_FSK;
 	catsniffer.lora_initialized = false;
 	catsniffer.lora_config_lock = false;
 
@@ -801,23 +756,20 @@ int switch_to_lora(void)
 	/* Ensure FSK async RX is not left active while switching modes. */
 	fsk_stop_rx();
 
-	int ret = sx126x_set_lora_mode(lora_dev);
+	catsniffer.current_modulation = LORA_MOD_LORA;
+	catsniffer.lora_initialized = true;
+
+	/* Calling lora_config() with modulation=LORA_MOD_LORA (the default
+	 * when zero-initialised) switches the driver back to LoRa mode and
+	 * applies the stored parameters in one step. */
+	int ret = apply_lora_config();
 	if (ret < 0) {
+		catsniffer.lora_initialized = false;
 		status_msg = "Error switching to LoRa mode\r\n";
 		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
 				  strlen(status_msg));
 		if (cdc2_dev)
 			uart_irq_tx_enable(cdc2_dev);
-		return ret;
-	}
-
-	catsniffer.current_modulation = FSK_MOD_LORA;
-	catsniffer.lora_initialized = true;
-
-	/* Re-apply LoRa configuration */
-	ret = apply_lora_config();
-	if (ret < 0) {
-		catsniffer.lora_initialized = false;
 	}
 
 	return ret;
@@ -863,7 +815,7 @@ void process_lora_command(char *cmd_line)
 	const char *status_msg;
 
 	/* Check if we're in FSK mode */
-	bool is_fsk = (catsniffer.current_modulation == FSK_MOD_FSK);
+	bool is_fsk = (catsniffer.current_modulation == LORA_MOD_FSK);
 
 	if (!catsniffer.lora_initialized && !is_fsk) {
 		int ret = initialize_lora();
@@ -910,7 +862,7 @@ void process_lora_command(char *cmd_line)
 		}
 
 		int ret =
-			sx126x_fsk_send(lora_dev, tx_data, sizeof(tx_data) - 1);
+			lora_send(lora_dev, tx_data, sizeof(tx_data) - 1);
 		if (was_rx_active) {
 			int rx_ret = fsk_start_rx_async();
 			if (rx_ret < 0) {
@@ -970,7 +922,7 @@ void process_lora_command(char *cmd_line)
 				fsk_stop_rx();
 			}
 
-			int ret = sx126x_fsk_send(lora_dev, tx_data, data_len);
+			int ret = lora_send(lora_dev, tx_data, data_len);
 			if (was_rx_active) {
 				int rx_ret = fsk_start_rx_async();
 				if (rx_ret < 0) {
@@ -1217,7 +1169,7 @@ static int lora_start_rx_async(void)
 /* Stop FSK RX */
 static void fsk_stop_rx(void)
 {
-	sx126x_fsk_recv_async(lora_dev, NULL, NULL);
+	lora_recv_async(lora_dev, NULL, NULL);
 	fsk_async_rx_active = false;
 	k_sleep(K_MSEC(5));
 }
@@ -1230,11 +1182,11 @@ static int fsk_start_rx_async(void)
 	}
 
 	if (!catsniffer.fsk_initialized ||
-	    catsniffer.current_modulation != FSK_MOD_FSK) {
+	    catsniffer.current_modulation != LORA_MOD_FSK) {
 		return -EINVAL;
 	}
 
-	int ret = sx126x_fsk_recv_async(lora_dev, fsk_rx_cb, NULL);
+	int ret = lora_recv_async(lora_dev, fsk_rx_cb, NULL);
 	if (ret == 0) {
 		fsk_async_rx_active = true;
 		return 0;
@@ -1243,9 +1195,9 @@ static int fsk_start_rx_async(void)
 	/* Recover if driver state was left busy but RX is not actually active.
 	 */
 	if (ret == -EBUSY) {
-		sx126x_fsk_recv_async(lora_dev, NULL, NULL);
+		lora_recv_async(lora_dev, NULL, NULL);
 		k_sleep(K_MSEC(2));
-		ret = sx126x_fsk_recv_async(lora_dev, fsk_rx_cb, NULL);
+		ret = lora_recv_async(lora_dev, fsk_rx_cb, NULL);
 		if (ret == 0) {
 			fsk_async_rx_active = true;
 		}
@@ -1270,7 +1222,7 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 		}
 
 		/* Handle based on current modulation */
-		if (catsniffer.current_modulation == FSK_MOD_FSK &&
+		if (catsniffer.current_modulation == LORA_MOD_FSK &&
 		    catsniffer.fsk_initialized) {
 			/* Keep FSK RX armed in both command and stream modes.
 			 */
@@ -1318,7 +1270,7 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 					if (fsk_async_rx_active) {
 						fsk_stop_rx();
 					}
-					int ret = sx126x_fsk_send(
+					int ret = lora_send(
 						lora_dev, tx_buffer, tx_len);
 
 					if (ret < 0) {
@@ -1357,7 +1309,7 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 					}
 				}
 			}
-		} else if (catsniffer.current_modulation == FSK_MOD_LORA) {
+		} else if (catsniffer.current_modulation == LORA_MOD_LORA) {
 			/* LoRa Mode */
 			lora_start_rx_async();
 			if (catsniffer.lora_mode == LORA_MODE_COMMAND) {
@@ -1456,12 +1408,12 @@ int main(void)
 	catsniffer.lora_config_lock = false;
 
 	// Initialize FSK configuration defaults
-	catsniffer.current_modulation = FSK_MOD_LORA;
+	catsniffer.current_modulation = LORA_MOD_LORA;
 	catsniffer.fsk_config.frequency = 915000000;
 	catsniffer.fsk_config.bitrate = 50000;
 	catsniffer.fsk_config.fdev = 25000;
-	catsniffer.fsk_config.shaping = FSK_BT_05;
-	catsniffer.fsk_config.bandwidth = 0x12; /* 187.2 kHz */
+	catsniffer.fsk_config.shaping = LORA_FSK_SHAPING_GAUSS_BT_0_5;
+	catsniffer.fsk_config.bandwidth = FSK_BW_187_KHZ;
 	catsniffer.fsk_config.tx_power = 14;
 	catsniffer.fsk_config.preamble_len = 8;
 	catsniffer.fsk_config.sync_word[0] = 0x12;
