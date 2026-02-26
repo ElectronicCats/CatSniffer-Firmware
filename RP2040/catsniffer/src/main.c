@@ -420,7 +420,7 @@ void change_mode(unsigned long new_mode)
 		gpio_pin_configure_dt(&pin_boot, GPIO_INPUT | GPIO_PULL_UP);
 		reset_cc1352();
 		catsniffer.led_interval = 1000;
-		change_baud(2000000);
+		change_baud(921600);
 		break;
 	}
 }
@@ -664,7 +664,8 @@ int apply_fsk_config(void)
 	if (cdc2_dev)
 		uart_irq_tx_enable(cdc2_dev);
 
-	/* Guard against impossible BW selections for configured bitrate/fdev. */
+	/* Guard against impossible BW selections for configured bitrate/fdev.
+	 */
 	uint32_t bw_hz = fsk_bw_enum_to_hz(catsniffer.fsk_config.bandwidth);
 	uint32_t required_hz = catsniffer.fsk_config.bitrate +
 			       (2 * catsniffer.fsk_config.fdev);
@@ -684,23 +685,23 @@ int apply_fsk_config(void)
 
 	/* Configure FSK using the public lora_config() API */
 	fsk_config_t *f = &catsniffer.fsk_config;
-	struct lora_modem_config cfg = {0};
+	struct lora_modem_config cfg = { 0 };
 
-	cfg.modulation       = LORA_MOD_FSK;
-	cfg.frequency        = f->frequency;
-	cfg.tx_power         = f->tx_power;
-	cfg.tx               = false; /* start in RX mode */
-	cfg.fsk.bitrate      = f->bitrate;
-	cfg.fsk.fdev         = f->fdev;
-	cfg.fsk.shaping      = f->shaping;
-	cfg.fsk.bandwidth    = f->bandwidth;
+	cfg.modulation = LORA_MOD_FSK;
+	cfg.frequency = f->frequency;
+	cfg.tx_power = f->tx_power;
+	cfg.tx = false; /* start in RX mode */
+	cfg.fsk.bitrate = f->bitrate;
+	cfg.fsk.fdev = f->fdev;
+	cfg.fsk.shaping = f->shaping;
+	cfg.fsk.bandwidth = f->bandwidth;
 	cfg.fsk.preamble_len = f->preamble_len;
 	memcpy(cfg.fsk.sync_word, f->sync_word, f->sync_word_len);
 	cfg.fsk.sync_word_len = f->sync_word_len;
-	cfg.fsk.variable_len  = !f->fixed_length;
-	cfg.fsk.payload_len   = f->payload_len;
-	cfg.fsk.crc_on        = f->crc_on;
-	cfg.fsk.whitening     = f->whitening;
+	cfg.fsk.variable_len = !f->fixed_length;
+	cfg.fsk.payload_len = f->payload_len;
+	cfg.fsk.crc_on = f->crc_on;
+	cfg.fsk.whitening = f->whitening;
 
 	int ret = lora_config(lora_dev, &cfg);
 	if (ret < 0) {
@@ -861,8 +862,7 @@ void process_lora_command(char *cmd_line)
 			fsk_stop_rx();
 		}
 
-		int ret =
-			lora_send(lora_dev, tx_data, sizeof(tx_data) - 1);
+		int ret = lora_send(lora_dev, tx_data, sizeof(tx_data) - 1);
 		if (was_rx_active) {
 			int rx_ret = fsk_start_rx_async();
 			if (rx_ret < 0) {
@@ -1270,8 +1270,8 @@ static void lora_thread_func(void *p1, void *p2, void *p3)
 					if (fsk_async_rx_active) {
 						fsk_stop_rx();
 					}
-					int ret = lora_send(
-						lora_dev, tx_buffer, tx_len);
+					int ret = lora_send(lora_dev, tx_buffer,
+							    tx_len);
 
 					if (ret < 0) {
 						char err_msg[64];

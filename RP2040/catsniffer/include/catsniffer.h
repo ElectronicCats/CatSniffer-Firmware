@@ -68,31 +68,33 @@ typedef struct {
 					      // BW_500_KHZ
 	uint8_t coding_rate; // CR_4_5, CR_4_6, CR_4_7, CR_4_8 (default: CR_4_5)
 	int8_t tx_power;     // -9 to 22 dBm (default: 20)
-	uint16_t preamble_len; // Default: 12
-	bool iq_inverted;      // IQ inversion (default: false/normal)
-	bool public_network;   // Sync word: false=private (0x12), true=public
-			       // (0x34)
-	uint8_t lora_sync_word;  // Custom sync word spec value (e.g. 0x2D for
-				 // Meshtastic). 0 = derive from public_network.
-	bool config_pending;   // true if changes not yet applied
+	uint16_t preamble_len;	// Default: 12
+	bool iq_inverted;	// IQ inversion (default: false/normal)
+	bool public_network;	// Sync word: false=private (0x12), true=public
+				// (0x34)
+	uint8_t lora_sync_word; // Custom sync word spec value (e.g. 0x2D for
+				// Meshtastic). 0 = derive from public_network.
+	bool config_pending;	// true if changes not yet applied
 } lora_config_t;
 
 // FSK configuration structure
 typedef struct {
-	uint32_t frequency;		      // Hz (default: 915000000)
-	uint32_t bitrate;		      // Bit rate in bps (default: 50000)
-	uint32_t fdev;			      // Frequency deviation in Hz (default: 25000)
-	enum lora_fsk_shaping shaping;	      // Gaussian BT shaping (LORA_FSK_SHAPING_*)
-	enum lora_fsk_bandwidth bandwidth;    // RX bandwidth (FSK_BW_* from lora.h)
-	int8_t tx_power;		      // -9 to 22 dBm (default: 14)
-	uint16_t preamble_len;		      // Preamble length in bytes (default: 5)
-	uint8_t sync_word[8];		      // Sync word bytes (default: 0x12, 0xAD)
-	uint8_t sync_word_len;		      // Sync word length (default: 2)
-	bool fixed_length;		      // Fixed vs variable length packets
-	uint8_t payload_len;		      // Payload length for fixed mode
-	bool crc_on;			      // Enable CRC (default: true)
-	bool whitening;			      // Enable whitening (default: true)
-	bool config_pending;		      // true if changes not yet applied
+	uint32_t frequency; // Hz (default: 915000000)
+	uint32_t bitrate;   // Bit rate in bps (default: 50000)
+	uint32_t fdev;	    // Frequency deviation in Hz (default: 25000)
+	enum lora_fsk_shaping shaping;	   // Gaussian BT shaping
+					   // (LORA_FSK_SHAPING_*)
+	enum lora_fsk_bandwidth bandwidth; // RX bandwidth (FSK_BW_* from
+					   // lora.h)
+	int8_t tx_power;		   // -9 to 22 dBm (default: 14)
+	uint16_t preamble_len; // Preamble length in bytes (default: 5)
+	uint8_t sync_word[8];  // Sync word bytes (default: 0x12, 0xAD)
+	uint8_t sync_word_len; // Sync word length (default: 2)
+	bool fixed_length;     // Fixed vs variable length packets
+	uint8_t payload_len;   // Payload length for fixed mode
+	bool crc_on;	       // Enable CRC (default: true)
+	bool whitening;	       // Enable whitening (default: true)
+	bool config_pending;   // true if changes not yet applied
 } fsk_config_t;
 
 // Catsniffer state structure
@@ -113,9 +115,10 @@ typedef struct {
 	bool lora_config_lock;	   // Lock flag to pause LoRa operations during
 				   // reconfiguration
 	// FSK state
-	enum lora_modulation current_modulation; // LORA_MOD_LORA or LORA_MOD_FSK
-	fsk_config_t fsk_config;    // Current FSK configuration
-	bool fsk_initialized;	    // Track FSK initialization state
+	enum lora_modulation current_modulation; // LORA_MOD_LORA or
+						 // LORA_MOD_FSK
+	fsk_config_t fsk_config;		 // Current FSK configuration
+	bool fsk_initialized; // Track FSK initialization state
 	// Packet loss counters (CC1352 UART bridge)
 	uint32_t uart_overrun_count;  // UART hardware FIFO overrun events
 	uint32_t ring_overflow_count; // Bytes dropped due to ring buffer full
