@@ -516,14 +516,14 @@ int initialize_lora(void)
 	if (cdc2_dev)
 		uart_irq_tx_enable(cdc2_dev);
 
-	struct lora_modem_config config;
+	struct lora_modem_config config = { 0 };
 	config.frequency = catsniffer.lora_config.frequency;
 	config.bandwidth = catsniffer.lora_config.bandwidth;
 	config.datarate = catsniffer.lora_config.spreading_factor;
 	config.preamble_len = catsniffer.lora_config.preamble_len;
 	config.coding_rate = catsniffer.lora_config.coding_rate;
 	config.tx_power = catsniffer.lora_config.tx_power;
-	config.tx = false; // Start in RX mode to enable receiving
+	config.tx = false;
 	config.iq_inverted = catsniffer.lora_config.iq_inverted;
 	config.public_network = catsniffer.lora_config.public_network;
 	config.lora_sync_word = catsniffer.lora_config.lora_sync_word;
@@ -577,17 +577,16 @@ int apply_lora_config(void)
 	if (cdc2_dev)
 		uart_irq_tx_enable(cdc2_dev);
 
-	struct lora_modem_config config;
+	struct lora_modem_config config = { 0 };
 	config.frequency = catsniffer.lora_config.frequency;
 	config.bandwidth = catsniffer.lora_config.bandwidth;
 	config.datarate = catsniffer.lora_config.spreading_factor;
 	config.preamble_len = catsniffer.lora_config.preamble_len;
 	config.coding_rate = catsniffer.lora_config.coding_rate;
 	config.tx_power = catsniffer.lora_config.tx_power;
-	config.tx = false; // Configure for RX mode
+	config.tx = false;
 	config.iq_inverted = catsniffer.lora_config.iq_inverted;
 	config.public_network = catsniffer.lora_config.public_network;
-	/* Non-zero overrides public_network with a custom network-ID byte. */
 	config.lora_sync_word = catsniffer.lora_config.lora_sync_word;
 
 	int ret = lora_config(lora_dev, &config);
@@ -1122,7 +1121,7 @@ static void lora_stop_rx(void)
 // Helper function to configure LoRa for TX
 static int lora_set_tx_mode(void)
 {
-	struct lora_modem_config config;
+	struct lora_modem_config config = { 0 };
 	config.frequency = catsniffer.lora_config.frequency;
 	config.bandwidth = catsniffer.lora_config.bandwidth;
 	config.datarate = catsniffer.lora_config.spreading_factor;
@@ -1132,34 +1131,18 @@ static int lora_set_tx_mode(void)
 	config.tx = true;
 	config.iq_inverted = catsniffer.lora_config.iq_inverted;
 	config.public_network = catsniffer.lora_config.public_network;
+	config.lora_sync_word = catsniffer.lora_config.lora_sync_word;
 	return lora_config(lora_dev, &config);
 }
 
-// Helper function to configure LoRa for RX
+// Helper function to start LoRa async RX (radio must already be configured)
 static int lora_start_rx_async(void)
 {
 	if (lora_async_rx_active) {
 		return 0;
 	}
 
-	struct lora_modem_config config;
-	config.frequency = catsniffer.lora_config.frequency;
-	config.bandwidth = catsniffer.lora_config.bandwidth;
-	config.datarate = catsniffer.lora_config.spreading_factor;
-	config.preamble_len = catsniffer.lora_config.preamble_len;
-	config.coding_rate = catsniffer.lora_config.coding_rate;
-	config.tx_power = catsniffer.lora_config.tx_power;
-	config.tx = false; // <--- RX Mode
-	config.iq_inverted = catsniffer.lora_config.iq_inverted;
-	config.public_network = catsniffer.lora_config.public_network;
-
-	// 1. Aplicar configuración física primero
-	int ret = lora_config(lora_dev, &config);
-	if (ret < 0)
-		return ret;
-
-	// 2. Iniciar la escucha asíncrona
-	ret = lora_recv_async(lora_dev, lora_rx_cb, NULL);
+	int ret = lora_recv_async(lora_dev, lora_rx_cb, NULL);
 	if (ret == 0) {
 		lora_async_rx_active = true;
 	}
