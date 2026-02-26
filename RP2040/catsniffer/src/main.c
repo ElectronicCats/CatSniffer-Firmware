@@ -1509,6 +1509,10 @@ int main(void)
 
 	// Main loop with LED animation
 	while (1) {
+		if (catsniffer.led_identify) {
+			k_msleep(10);
+			continue;
+		}
 		int64_t current_time = k_uptime_get();
 		if (current_time - catsniffer.previous_millis >
 		    catsniffer.led_interval) {

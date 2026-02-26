@@ -122,6 +122,8 @@ typedef struct {
 	// Packet loss counters (CC1352 UART bridge)
 	uint32_t uart_overrun_count;  // UART hardware FIFO overrun events
 	uint32_t ring_overflow_count; // Bytes dropped due to ring buffer full
+	// Identify state
+	bool led_identify; // true while identify LED blink sequence is active
 } catsniffer_t;
 
 // Global catsniffer instance

@@ -73,6 +73,7 @@ static void cmd_fsk_config(char *args);
 static void cmd_fsk_apply(char *args);
 static void cmd_modulation(char *args);
 static void cmd_radio(char *args);
+static void cmd_identify(char *args);
 
 static const char *fsk_bw_enum_to_khz_str(enum lora_fsk_bandwidth bw)
 {
@@ -168,6 +169,8 @@ static const shell_cmd_t commands[] = {
 	{ "fsk_apply", cmd_fsk_apply, "Apply FSK config", false },
 	{ "modulation", cmd_modulation, "lora|fsk modulation", true },
 	{ "radio", cmd_radio, "Forward radio cmd (TEST/FSKRX/FSKTX/TX)", true },
+	{ "identify", cmd_identify, "Blink all LEDs to identify this board",
+	  false },
 	{ NULL, NULL, NULL, false }
 };
 
@@ -280,6 +283,36 @@ static void cmd_fw_version(char *args)
 		 CATSNIFFER_GIT_DIRTY, CATSNIFFER_BUILD_TIME_UTC,
 		 CATSNIFFER_COMPILER_ID, CATSNIFFER_COMPILER_VERSION);
 	shell_reply(buf);
+}
+
+#define IDENTIFY_BLINK_STEPS 20 /* 10 on + 10 off = 10 full blinks */
+#define IDENTIFY_BLINK_MS 100
+
+static int identify_steps_remaining;
+
+static void identify_timer_expiry(struct k_timer *timer)
+{
+	if (identify_steps_remaining <= 0) {
+		k_timer_stop(timer);
+		set_status_leds(0, 0, 0);
+		catsniffer.led_identify = false;
+		return;
+	}
+	int on = (identify_steps_remaining % 2 == 0);
+	set_status_leds(on, on, on);
+	identify_steps_remaining--;
+}
+
+K_TIMER_DEFINE(identify_timer, identify_timer_expiry, NULL);
+
+static void cmd_identify(char *args)
+{
+	k_timer_stop(&identify_timer);
+	catsniffer.led_identify = true;
+	identify_steps_remaining = IDENTIFY_BLINK_STEPS;
+	shell_reply("Identifying board...\r\n");
+	k_timer_start(&identify_timer, K_MSEC(IDENTIFY_BLINK_MS),
+		      K_MSEC(IDENTIFY_BLINK_MS));
 }
 
 static void cmd_cc1352_fw_id(char *args)
