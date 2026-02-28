@@ -540,6 +540,20 @@ int initialize_lora(void)
 
 	catsniffer.lora_initialized = true;
 	catsniffer.lora_config_lock = false;
+
+	/* Arm LoRa RX immediately on init, not only in thread periodic loop. */
+	ret = lora_start_rx_async();
+	if (ret < 0 && ret != -EBUSY) {
+		char err_buf[96];
+		snprintf(err_buf, sizeof(err_buf),
+			 "WARN: LoRa RX start failed (%d: %s)\r\n", ret,
+			 get_error_string(ret));
+		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)err_buf,
+				  strlen(err_buf));
+		if (cdc2_dev)
+			uart_irq_tx_enable(cdc2_dev);
+	}
+
 	status_msg = "LoRa: Initialization completed (RX mode)!\r\n";
 	safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)status_msg,
 			  strlen(status_msg));
@@ -611,6 +625,19 @@ int apply_lora_config(void)
 			  strlen(status_msg));
 	if (cdc2_dev)
 		uart_irq_tx_enable(cdc2_dev);
+
+	/* Re-arm RX right after successful apply. */
+	ret = lora_start_rx_async();
+	if (ret < 0 && ret != -EBUSY) {
+		char err_buf[96];
+		snprintf(err_buf, sizeof(err_buf),
+			 "WARN: LoRa RX re-arm failed (%d: %s)\r\n", ret,
+			 get_error_string(ret));
+		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)err_buf,
+				  strlen(err_buf));
+		if (cdc2_dev)
+			uart_irq_tx_enable(cdc2_dev);
+	}
 
 	return 0;
 }
@@ -1145,6 +1172,17 @@ static int lora_start_rx_async(void)
 	int ret = lora_recv_async(lora_dev, lora_rx_cb, NULL);
 	if (ret == 0) {
 		lora_async_rx_active = true;
+		return 0;
+	}
+
+	/* Recover if the driver is left busy from a prior state transition. */
+	if (ret == -EBUSY) {
+		lora_recv_async(lora_dev, NULL, NULL);
+		k_sleep(K_MSEC(2));
+		ret = lora_recv_async(lora_dev, lora_rx_cb, NULL);
+		if (ret == 0) {
+			lora_async_rx_active = true;
+		}
 	}
 	return ret;
 }
