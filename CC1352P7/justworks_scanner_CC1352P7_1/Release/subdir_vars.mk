@@ -2,23 +2,21 @@
 # Automatically-generated file. Do not edit!
 ################################################################################
 
-# Add inputs and outputs from these tool invocations to the build variables 
+# Add inputs and outputs from these tool invocations to the build variables
 SYSCFG_SRCS += \
-../justworks_scanner.syscfg 
+../justworks_scanner.syscfg
 
 GEN_MISC_FILES += \
-./syscfg/error.h 
+./syscfg/error.h
 
 GEN_MISC_DIRS += \
-./syscfg 
+./syscfg
 
 GEN_MISC_FILES__QUOTED += \
-"syscfg/error.h" 
+"syscfg/error.h"
 
 GEN_MISC_DIRS__QUOTED += \
-"syscfg" 
+"syscfg"
 
 SYSCFG_SRCS__QUOTED += \
-"../justworks_scanner.syscfg" 
-
-
+"../justworks_scanner.syscfg"

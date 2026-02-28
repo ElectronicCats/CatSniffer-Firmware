@@ -31,7 +31,6 @@
 #include <ti/sysbios/runtime/System.h>
 #include <ti/sysbios/runtime/Timestamp.h>
 
-
 /* Idle module definitions */
 
 /* Idle functions */
@@ -40,18 +39,16 @@ extern void Power_idleFunc(void);
 
 /* Idle function list */
 volatile const Idle_FuncPtr Idle_funcList[2] = {
-    _pthread_cleanupFxn,
-    Power_idleFunc,
+	_pthread_cleanupFxn,
+	Power_idleFunc,
 };
-
-
 
 /* Startup module definitions */
 
 /* Startup reset functions */
 void Startup_reset()
 {
-    Boot_trimDevice();
+	Boot_trimDevice();
 }
 
 /*
@@ -61,26 +58,25 @@ void Startup_reset()
  */
 void Startup_exec()
 {
-    /* Startup first functions */
-    Hwi_initNVIC();
-    Hwi_initStack();
-    BIOS_init();
-    ti_sysbios_family_arm_cc26xx_TimestampProvider_init();
+	/* Startup first functions */
+	Hwi_initNVIC();
+	Hwi_initStack();
+	BIOS_init();
+	ti_sysbios_family_arm_cc26xx_TimestampProvider_init();
 
-    /* Module init functions */
-    System_init();
-    Clock_init();
-    Swi_init();
-    Task_init();
-    Idle_init();
-    Hwi_init();
-    HeapCallback_init();
+	/* Module init functions */
+	System_init();
+	Clock_init();
+	Swi_init();
+	Task_init();
+	Idle_init();
+	Hwi_init();
+	HeapCallback_init();
 
-    Startup_done = true;
+	Startup_done = true;
 }
 
 /* BIOS module definitions */
-
 
 HeapCallback_Object BIOS_heapCallbackObject;
 
@@ -90,15 +86,15 @@ HeapCallback_Object BIOS_heapCallbackObject;
  */
 void BIOS_init(void)
 {
-    if (BIOS_module->initDone) {
-        return;
-    }
-    BIOS_module->initDone = true;
+	if (BIOS_module->initDone) {
+		return;
+	}
+	BIOS_module->initDone = true;
 
-    HeapCallback_init();
+	HeapCallback_init();
 
-    Memory_defaultHeapInstance = (IHeap_Handle)HeapCallback_construct(
-        &BIOS_heapCallbackObject, NULL);
+	Memory_defaultHeapInstance = (IHeap_Handle)HeapCallback_construct(
+		&BIOS_heapCallbackObject, NULL);
 }
 
 #include <ti/dpl/ClockP_tirtos.c>
