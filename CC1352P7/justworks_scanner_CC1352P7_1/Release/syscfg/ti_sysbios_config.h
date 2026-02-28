@@ -40,8 +40,8 @@ extern "C" {
 #define BIOS_RTS_GATE_STRUCT GateMutexPri_Struct
 #define BIOS_RTS_GATE_HANDLE(x) GateMutexPri_handle(x)
 #define BIOS_RTS_GATE_ENTER(x) GateMutexPri_enter(x)
-#define BIOS_RTS_GATE_LEAVE(x,y) GateMutexPri_leave(x,y)
-#define BIOS_RTS_GATE_CONSTRUCT(x,y) GateMutexPri_construct(x,y)
+#define BIOS_RTS_GATE_LEAVE(x, y) GateMutexPri_leave(x, y)
+#define BIOS_RTS_GATE_CONSTRUCT(x, y) GateMutexPri_construct(x, y)
 
 /* ensure Error and Assert defines come before dependent modules */
 
@@ -58,8 +58,6 @@ extern "C" {
 #define Error_raiseHookFxn(x)
 
 /* Settings module definitions */
-
-
 
 /* Seconds module definitions */
 
@@ -203,10 +201,14 @@ extern void System_exitSpin(int);
 
 /* ti_sysbios_runtime_Timestamp module definitions */
 
-#define TimestampProvider_get32_D ti_sysbios_family_arm_cc26xx_TimestampProvider_get32
-#define TimestampProvider_get64_D ti_sysbios_family_arm_cc26xx_TimestampProvider_get64
-#define TimestampProvider_getFreq_D ti_sysbios_family_arm_cc26xx_TimestampProvider_getFreq
-#define TimestampProvider_init_D ti_sysbios_family_arm_cc26xx_TimestampProvider_init
+#define TimestampProvider_get32_D \
+	ti_sysbios_family_arm_cc26xx_TimestampProvider_get32
+#define TimestampProvider_get64_D \
+	ti_sysbios_family_arm_cc26xx_TimestampProvider_get64
+#define TimestampProvider_getFreq_D \
+	ti_sysbios_family_arm_cc26xx_TimestampProvider_getFreq
+#define TimestampProvider_init_D \
+	ti_sysbios_family_arm_cc26xx_TimestampProvider_init
 
 #ifdef __cplusplus
 }

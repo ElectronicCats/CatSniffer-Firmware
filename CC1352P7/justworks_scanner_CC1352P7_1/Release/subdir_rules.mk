@@ -12,5 +12,3 @@ build-1216307151: ../justworks_scanner.syscfg
 
 syscfg/error.h: build-1216307151 ../justworks_scanner.syscfg
 syscfg: build-1216307151
-
-

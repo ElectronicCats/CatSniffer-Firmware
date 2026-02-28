@@ -1,16 +1,16 @@
-# CatSniffer firmware 
+# CatSniffer firmware
 
 Here you will find the different firmwares for using this tool, it is important to note what CatSniffer version you own since the main microcontroller changed in v3.x we needed to keep track of compatibility between different processors and protocols.
 
 ## Firmware for different versions
 
-For programming your CatSniffer you need to review what version do you own this is really important 
+For programming your CatSniffer you need to review what version do you own this is really important
 
 `IF YOU SELECT A DIFFERENT FIRMWARE VERSION THAN YOUR CATSNIFFER YOU WILL BIRCK IT`
 
 If you have a bricked CatSniffer you can read the [wiki part to recover it]([https://github.com/ElectronicCats/CatSniffer/wiki/08.-Restore-the-CC1352-firmware](https://github.com/ElectronicCats/CatSniffer/wiki/10.-Restore-CC1352)).
 
-Each firmware folder includes the examples that are compatible with your board: 
+Each firmware folder includes the examples that are compatible with your board:
 
 - V1.x/V2.x for all version v1.x and v2.x, with SAMD and CC1352P1
 - V3.x for version v3.x and further, with RP2040 and CC1352P7
@@ -32,8 +32,6 @@ The CC1352P can be programmed via Serial using the [tool cc2538](https://github.
 
 ![v3.x Block Diagram](https://github.com/ElectronicCats/CatSniffer/assets/139595394/9467331c-014f-48a6-9934-0a0b5fa63f27)
 
-
-
 ## CC1352P vs CC1352P7
 
 The CC1352 chip has inside two ARM® Cortex® processors:
@@ -51,12 +49,12 @@ Memory:
 - 256KB ROM
 
 Wireless protocols support:
-- Thread, Zigbee® 
+- Thread, Zigbee®
 - Bluetooth® 5.2 Low Energy
-- IEEE 802.15.4g 
-- IPv6-enabled smart objects (6LoWPAN) 
+- IEEE 802.15.4g
+- IPv6-enabled smart objects (6LoWPAN)
 - MIOTY®
-- Wireless M-Bus 
+- Wireless M-Bus
 - WiSUN®
 - SimpleLink™ TI 15.4-Stack (Sub-1 GHz)
 - Proprietary systems.
@@ -100,7 +98,7 @@ All Catsniffer Hardware has been moved to a different repository, to have a bett
 https://github.com/ElectronicCats/CatSniffer
 
 ## How to contribute <img src="https://electroniccats.com/wp-content/uploads/2018/01/fav.png" height="35"><img src="https://raw.githubusercontent.com/gist/ManulMax/2d20af60d709805c55fd784ca7cba4b9/raw/bcfeac7604f674ace63623106eb8bb8471d844a6/github.gif" height="30">
- Contributions are welcome! 
+ Contributions are welcome!
 
 Please read the document  [**Contribution Manual**](https://github.com/ElectronicCats/electroniccats-cla/blob/main/electroniccats-contribution-manual.md)  which will show you how to contribute your changes to the project.
 

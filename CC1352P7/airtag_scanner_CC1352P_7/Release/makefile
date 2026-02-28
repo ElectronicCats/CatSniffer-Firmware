@@ -6,8 +6,8 @@ SHELL = cmd.exe
 
 CG_TOOL_ROOT := C:/ti/ccs1230/ccs/tools/compiler/ti-cgt-armllvm_2.1.3.LTS
 
-GEN_OPTS__FLAG := @"syscfg/ti_build_config.opt" @"syscfg/ti_ble_app_config.opt" 
-GEN_CMDS__FLAG := 
+GEN_OPTS__FLAG := @"syscfg/ti_build_config.opt" @"syscfg/ti_ble_app_config.opt"
+GEN_CMDS__FLAG :=
 
 ORDERED_OBJS += \
 "./syscfg/ti_ble_config.o" \
@@ -147,7 +147,7 @@ endif
 
 -include ../makefile.defs
 
-# Add inputs and outputs from these tool invocations to the build variables 
+# Add inputs and outputs from these tool invocations to the build variables
 EXE_OUTPUTS += \
 airtag_scanner_CC1352P_7.out \
 
@@ -171,8 +171,8 @@ airtag_scanner_CC1352P_7.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS)
 # Other Targets
 clean:
 	-$(RM) $(GEN_MISC_FILES__QUOTED)$(GEN_FILES__QUOTED)$(EXE_OUTPUTS__QUOTED)
-	-$(RM) "syscfg\ti_ble_config.o" "syscfg\ti_devices_config.o" "syscfg\ti_radio_config.o" "syscfg\ti_drivers_config.o" "syscfg\ti_sysbios_config.o" "Application\airtag_scanner.o" "Application\util.o" "Drivers\NV\crc.o" "Drivers\NV\nvocmp.o" "Startup\main.o" "Startup\osal_icall_ble.o" "Startup\rom_init.o" "iCall\icall.o" "iCall\icall_cc2650.o" "iCall\icall_user_config.o" "iCallBLE\ble_user_config.o" "iCallBLE\ble_user_config_stack.o" "iCallBLE\icall_api_lite.o" 
-	-$(RM) "syscfg\ti_ble_config.d" "syscfg\ti_devices_config.d" "syscfg\ti_radio_config.d" "syscfg\ti_drivers_config.d" "syscfg\ti_sysbios_config.d" "Application\airtag_scanner.d" "Application\util.d" "Drivers\NV\crc.d" "Drivers\NV\nvocmp.d" "Startup\main.d" "Startup\osal_icall_ble.d" "Startup\rom_init.d" "iCall\icall.d" "iCall\icall_cc2650.d" "iCall\icall_user_config.d" "iCallBLE\ble_user_config.d" "iCallBLE\ble_user_config_stack.d" "iCallBLE\icall_api_lite.d" 
+	-$(RM) "syscfg\ti_ble_config.o" "syscfg\ti_devices_config.o" "syscfg\ti_radio_config.o" "syscfg\ti_drivers_config.o" "syscfg\ti_sysbios_config.o" "Application\airtag_scanner.o" "Application\util.o" "Drivers\NV\crc.o" "Drivers\NV\nvocmp.o" "Startup\main.o" "Startup\osal_icall_ble.o" "Startup\rom_init.o" "iCall\icall.o" "iCall\icall_cc2650.o" "iCall\icall_user_config.o" "iCallBLE\ble_user_config.o" "iCallBLE\ble_user_config_stack.o" "iCallBLE\icall_api_lite.o"
+	-$(RM) "syscfg\ti_ble_config.d" "syscfg\ti_devices_config.d" "syscfg\ti_radio_config.d" "syscfg\ti_drivers_config.d" "syscfg\ti_sysbios_config.d" "Application\airtag_scanner.d" "Application\util.d" "Drivers\NV\crc.d" "Drivers\NV\nvocmp.d" "Startup\main.d" "Startup\osal_icall_ble.d" "Startup\rom_init.d" "iCall\icall.d" "iCall\icall_cc2650.d" "iCall\icall_user_config.d" "iCallBLE\ble_user_config.d" "iCallBLE\ble_user_config_stack.d" "iCallBLE\icall_api_lite.d"
 	-$(RMDIR) $(GEN_MISC_DIRS__QUOTED)
 	-@echo 'Finished clean'
 	-@echo ' '
@@ -185,4 +185,3 @@ post-build:
 .SECONDARY:
 
 -include ../makefile.targets
-

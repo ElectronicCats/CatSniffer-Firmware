@@ -3,13 +3,13 @@
  @file  airtag_scanner.h
 
  @brief This file contains the Simple Central sample application
-        definitions and prototypes.
+	definitions and prototypes.
 
  Group: WCS, BTS
  Target Device: cc13xx_cc26xx
 
  ******************************************************************************
- 
+
  Copyright (c) 2013-2023, Texas Instruments Incorporated
  All rights reserved.
 
@@ -41,16 +41,15 @@
  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
  ******************************************************************************
- 
- 
+
+
  *****************************************************************************/
 
 #ifndef AirtagScanner_H
 #define AirtagScanner_H
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 /*********************************************************************
@@ -58,8 +57,8 @@ extern "C"
  */
 
 /*********************************************************************
-*  EXTERNAL VARIABLES
-*/
+ *  EXTERNAL VARIABLES
+ */
 
 /*********************************************************************
  * CONSTANTS
@@ -69,7 +68,7 @@ extern "C"
 // Note: this value cannot be greater than the number of items reserved in
 // scMenuConnect (See airtag_scanner_menu.c)
 // This cannot exceed 27 (two-button menu's constraint)
-#define DEFAULT_MAX_SCAN_RES                 8
+#define DEFAULT_MAX_SCAN_RES 8
 #include "gap_scanner.h"
 /*********************************************************************
  * MACROS
@@ -100,7 +99,7 @@ bool AirtagScanner_doStopDiscovering(uint8_t index);
 bool AirtagScanner_doAutoConnect(uint8_t index);
 
 /* Action for Menu: Connect */
-bool AirtagScanner_doConnect(GapScan_Evt_AdvRpt_t* pAdvInfo);
+bool AirtagScanner_doConnect(GapScan_Evt_AdvRpt_t *pAdvInfo);
 
 /* Action for Menu: Cancel Connecting */
 bool AirtagScanner_doCancelConnecting(uint8_t index);
