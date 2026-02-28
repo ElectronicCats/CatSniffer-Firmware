@@ -1,5 +1,28 @@
 # CatSniffer Verification Scripts
 
+## Firmware Version Format
+
+Release firmware versions must follow:
+
+`vA.X.Y.Z`
+
+- `A`: Compatible board category
+- `X`: Major
+- `Y`: Minor
+- `Z`: Patch
+
+Validation helper:
+
+```bash
+./scripts/validate_fw_version.sh v1.0.0.0
+```
+
+Current CI policy:
+
+- `A` must be `3` (board family 3.1/3.2/3.3).
+- First firmware release must be exactly `v3.1.0.0`.
+- Subsequent releases must be `>= v3.1.0.0`.
+
 ## verify_endpoints.py
 
 Multi-device verification tool for CatSniffer firmware testing.

@@ -1,0 +1,131 @@
+name: Release Assets
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vA.X.Y.Z)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.release_tag }}
+    env:
+      REQUIRED_BOARD_COMPAT: "3"
+      MIN_RELEASE_VERSION: "v3.1.0.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG_NAME="${{ github.event.inputs.tag }}"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+          fi
+          echo "release_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Using tag: ${TAG_NAME}"
+
+      - name: Validate firmware version policy
+        run: |
+          ./scripts/validate_fw_version.sh "${{ steps.tag.outputs.release_tag }}" \
+            --require-board "${REQUIRED_BOARD_COMPAT}" \
+            --min-version "${MIN_RELEASE_VERSION}"
+
+  build-rp2040:
+    runs-on: ubuntu-22.04
+    needs: validate-version
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: catsniffer
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Zephyr project
+        uses: zephyrproject-rtos/action-zephyr-setup@v1
+        with:
+          app-path: catsniffer
+          toolchains: arm-zephyr-eabi
+
+      - name: Build RP2040 firmware
+        working-directory: catsniffer
+        shell: bash
+        run: |
+          west build -p always -b rpi_pico -- -DCATSNIFFER_FW_VERSION=${{ needs.validate-version.outputs.release_tag }}
+          test -f build/zephyr/zephyr.uf2
+          mkdir -p dist/rp2040
+          cp build/zephyr/zephyr.uf2 dist/rp2040/zephyr.uf2
+
+      - name: Upload RP2040 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rp2040-uf2
+          path: catsniffer/dist/rp2040/zephyr.uf2
+
+  publish-release:
+    runs-on: ubuntu-latest
+    needs: [validate-version, build-rp2040]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download RP2040 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rp2040-uf2
+          path: dist/rp2040
+
+      - name: Generate checksums
+        run: |
+          (
+            cd dist
+            find . -type f \( -name "*.uf2" \) -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+      - name: Publish draft GitHub release (RP2040 assets)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.validate-version.outputs.release_tag }}
+        run: |
+          shopt -s nullglob
+          ASSETS=(dist/rp2040/*.uf2 dist/SHA256SUMS.txt)
+          NOTES_FILE="release/${TAG_NAME}.md"
+          TEMP_NOTES="$(mktemp)"
+
+          {
+            if [[ -f "${NOTES_FILE}" ]]; then
+              cat "${NOTES_FILE}"
+              echo ""
+            fi
+            echo "## Pending manual step: CC1352 assets"
+            echo ""
+            echo "CC1352 \`.hex\` files are built outside CI (Code Composer Studio)."
+            echo "Upload the required CC1352 assets to this release before publishing."
+          } > "${TEMP_NOTES}"
+
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "${ASSETS[@]}" --clobber
+            gh release edit "${TAG_NAME}" --draft=true --notes-file "${TEMP_NOTES}"
+          else
+            gh release create "${TAG_NAME}" "${ASSETS[@]}" --title "CatSniffer ${TAG_NAME}" --notes-file "${TEMP_NOTES}" --draft
+          fi
