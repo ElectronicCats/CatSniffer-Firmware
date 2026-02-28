@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Tag name to publish (example: v1.2.3)"
+        description: "Tag name to publish (example: v3.1.0.0)"
         required: true
         type: string
 
@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout firmware repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve release version
         id: version
@@ -60,7 +62,7 @@ jobs:
           cd "${GITHUB_WORKSPACE}/RP2040"
           west update
 
-      - name: Build release firmware
+      - name: Build release firmware (RP2040)
         shell: bash
         run: |
           set -euo pipefail
@@ -73,17 +75,38 @@ jobs:
             -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr" \
             -DCATSNIFFER_FW_VERSION="${CATSNIFFER_FW_VERSION}"
 
+      - name: Collect CC1352 HEX assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          python3 tools/get_hex_files.py
+
+      - name: Filter unsupported CC1352 example HEX files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d "${GITHUB_WORKSPACE}/tmp" ]]; then
+            find "${GITHUB_WORKSPACE}/tmp" -type f \( -iname "simple_central*.hex" -o -iname "simple_peripheral*.hex" \) -delete
+          fi
+
       - name: Prepare release assets
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${GITHUB_WORKSPACE}/release-assets"
+
           cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.uf2" \
              "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.uf2"
-          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.hex" \
-             "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.hex"
-          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.elf" \
-             "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.elf"
+
+          if [[ -f "${GITHUB_WORKSPACE}/board_release.json" ]]; then
+            cp "${GITHUB_WORKSPACE}/board_release.json" "${GITHUB_WORKSPACE}/release-assets/board_release.json"
+          fi
+
+          if [[ -d "${GITHUB_WORKSPACE}/tmp" ]]; then
+            cp "${GITHUB_WORKSPACE}/tmp/"*.hex "${GITHUB_WORKSPACE}/release-assets/" || true
+          fi
+
           sha256sum "${GITHUB_WORKSPACE}/release-assets/"* > \
             "${GITHUB_WORKSPACE}/release-assets/SHA256SUMS.txt"
 
@@ -95,6 +118,13 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.uf2
-            release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.hex
-            release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.elf
+            release-assets/board_release.json
+            release-assets/*.hex
             release-assets/SHA256SUMS.txt
+
+      - name: Cleanup temporary files
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${GITHUB_WORKSPACE}/tmp" || true
+          rm -f "${GITHUB_WORKSPACE}/board_release.json" || true
