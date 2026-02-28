@@ -16,6 +16,7 @@ VERBOSE=0
 SHELL_PORT_OVERRIDE=""
 ALL_DEVICES=0
 FW_VERSION_OVERRIDE=""
+VERSION_VALIDATOR="$SCRIPT_DIR/validate_fw_version.sh"
 
 usage() {
     cat <<'EOF'
@@ -38,6 +39,15 @@ Useful flags:
   -v    Verbose shell tracing
   -h    Show this help
 EOF
+}
+
+validate_firmware_version() {
+    local version="$1"
+    if [[ ! -x "$VERSION_VALIDATOR" ]]; then
+        echo "ERROR: Version validator is missing or not executable: $VERSION_VALIDATOR"
+        exit 1
+    fi
+    "$VERSION_VALIDATOR" "$version" >/dev/null
 }
 
 # Parse long flags first
@@ -89,6 +99,10 @@ if [[ $DO_COMPILE -eq 0 && $DO_FLASH -eq 0 && $DO_TEST -eq 0 ]]; then
     DO_COMPILE=1
     DO_FLASH=1
     DO_TEST=1
+fi
+
+if [[ -n "$FW_VERSION_OVERRIDE" ]]; then
+    validate_firmware_version "$FW_VERSION_OVERRIDE"
 fi
 
 LINUX_USER="${USER:-$(id -un)}"
