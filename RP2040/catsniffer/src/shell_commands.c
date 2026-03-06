@@ -20,6 +20,7 @@ void change_band(unsigned long new_band);
 void process_lora_command(char *cmd_line);
 int queue_radio_command(const char *cmd_line);
 void set_status_leds(int l0, int l1, int l2);
+int lora_scan_range(uint32_t start_hz, uint32_t end_hz, uint32_t step_hz);
 
 extern catsniffer_t catsniffer;
 
@@ -74,6 +75,7 @@ static void cmd_fsk_apply(char *args);
 static void cmd_modulation(char *args);
 static void cmd_radio(char *args);
 static void cmd_identify(char *args);
+static void cmd_lora_scan(char *args);
 
 static const char *fsk_bw_enum_to_khz_str(enum lora_fsk_bandwidth bw)
 {
@@ -171,6 +173,8 @@ static const shell_cmd_t commands[] = {
 	{ "radio", cmd_radio, "Forward radio cmd (TEST/FSKRX/FSKTX/TX)", true },
 	{ "identify", cmd_identify, "Blink all LEDs to identify this board",
 	  false },
+	{ "lora_scan", cmd_lora_scan,
+	  "RSSI sweep: lora_scan <start_hz> <end_hz> [step_hz]", true },
 	{ NULL, NULL, NULL, false }
 };
 
@@ -1333,6 +1337,53 @@ static void cmd_radio(char *args)
 	if (ret < 0) {
 		shell_reply("ERROR: Failed to queue radio command\r\n");
 	}
+}
+
+static void cmd_lora_scan(char *args)
+{
+	/* Skip command name */
+	while (*args && *args != ' ')
+		args++;
+	while (*args == ' ')
+		args++;
+
+	if (*args == '\0') {
+		shell_reply("Usage: lora_scan <start_hz> <end_hz> [step_hz]\r\n");
+		shell_reply("  Sweeps the given frequency range and prints\r\n");
+		shell_reply("  FREQ <mhz> RSSI <dbm> for each step.\r\n");
+		shell_reply("  Default step: 200000 Hz (200 kHz)\r\n");
+		shell_reply("  Example: lora_scan 902300000 915000000 200000\r\n");
+		return;
+	}
+
+	char *p = args;
+	uint32_t start_hz = (uint32_t)atoi(p);
+	while (*p && *p != ' ')
+		p++;
+	while (*p == ' ')
+		p++;
+
+	if (*p == '\0') {
+		shell_reply("Usage: lora_scan <start_hz> <end_hz> [step_hz]\r\n");
+		return;
+	}
+
+	uint32_t end_hz = (uint32_t)atoi(p);
+	while (*p && *p != ' ')
+		p++;
+	while (*p == ' ')
+		p++;
+
+	uint32_t step_hz = (*p != '\0') ? (uint32_t)atoi(p) : 200000U;
+
+	if (start_hz < 137000000U || start_hz > 1020000000U ||
+	    end_hz   < 137000000U || end_hz   > 1020000000U ||
+	    start_hz >= end_hz || step_hz < 1000U) {
+		shell_reply("Error: invalid range or step\r\n");
+		return;
+	}
+
+	lora_scan_range(start_hz, end_hz, step_hz);
 }
 
 // Main command processor

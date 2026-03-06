@@ -643,6 +643,74 @@ int apply_lora_config(void)
 }
 
 /* ============================================ */
+/* Spectrum / RSSI scan                         */
+/* ============================================ */
+
+/*
+ * lora_scan_range - sweep the given frequency range and emit one
+ * "FREQ <mhz> RSSI <dbm>" line per step to the Cat-Shell port (CDC2).
+ *
+ * Output framing:
+ *   SCAN_START\r\n
+ *   FREQ 902.300 RSSI -103\r\n
+ *   ...
+ *   SCAN_END\r\n
+ *
+ * The radio is returned to async RX mode with the previous config when
+ * the scan finishes.
+ *
+ * Parameters are in Hz (e.g. start_hz=902300000, step_hz=200000).
+ */
+int lora_scan_range(uint32_t start_hz, uint32_t end_hz, uint32_t step_hz)
+{
+	if (!catsniffer.lora_initialized) {
+		shell_reply("Error: LoRa not initialized\r\n");
+		return -ENODEV;
+	}
+
+	catsniffer.lora_config_lock = true;
+	k_msleep(50);
+
+	/* Stop any ongoing async RX */
+	lora_recv_async(lora_dev, NULL, NULL);
+	lora_async_rx_active = false;
+
+	shell_reply("SCAN_START\r\n");
+
+	/* Build a minimal RX config using the current modulation settings.
+	 * BW/SF/CR stay fixed; only frequency changes per step. */
+	struct lora_modem_config cfg = { 0 };
+	cfg.bandwidth    = catsniffer.lora_config.bandwidth;
+	cfg.datarate     = catsniffer.lora_config.spreading_factor;
+	cfg.preamble_len = catsniffer.lora_config.preamble_len;
+	cfg.coding_rate  = catsniffer.lora_config.coding_rate;
+	cfg.tx_power     = catsniffer.lora_config.tx_power;
+	cfg.tx           = false;
+
+	for (uint32_t freq = start_hz; freq <= end_hz; freq += step_hz) {
+		cfg.frequency = freq;
+		if (lora_config(lora_dev, &cfg) < 0) {
+			continue;
+		}
+
+		int8_t rssi = 0;
+		lora_get_rssi_inst(lora_dev, &rssi);
+
+		char line[48];
+		snprintf(line, sizeof(line), "FREQ %.3f RSSI %d\r\n",
+			 (double)freq / 1.0e6, (int)rssi);
+		shell_reply(line);
+	}
+
+	shell_reply("SCAN_END\r\n");
+
+	/* Restore the original config and re-arm RX */
+	catsniffer.lora_config_lock = false;
+	apply_lora_config();
+	return 0;
+}
+
+/* ============================================ */
 /* FSK/GFSK Functions                           */
 /* ============================================ */
 
