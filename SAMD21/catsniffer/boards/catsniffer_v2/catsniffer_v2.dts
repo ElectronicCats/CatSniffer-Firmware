@@ -1,0 +1,192 @@
+/*
+ * Copyright (c) 2026 Electronic Cats
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * CatSniffer v1.x/v2.x board - ATSAMD21E17A/E17D (32-pin, Port A only)
+ * Pin map taken from the Electronic Cats Arduino core, variant "catsniffer".
+ *
+ *   PA00 = LED3              PA01 = CC1352 RESET (RTS)
+ *   PA02 = SX1262 BUSY       PA03 = SX1262 DIO1 (IRQ)
+ *   PA04 = CC1352 UART TX    PA05 = CC1352 UART RX
+ *   PA07 = CC1352 BOOT (CTS) PA08 = SX1262 RESET (active low)
+ *   PA10 = CTF3              PA11 = CTF2
+ *   PA14 = CTF1              PA15 = SX1262 ANT_SW
+ *   PA17 = SX1262 CS (GPIO)  PA18 = SX1262 MOSI (SERCOM3 PAD2)
+ *   PA19 = SX1262 SCK        PA22 = SX1262 MISO (SERCOM3 PAD0)
+ *   PA24 = USB D-            PA25 = USB D+
+ *   PA27 = LED1              PA28 = LED2
+ *   PA30 = SWCLK             PA31 = SWDIO
+ *   Unused: PA06 (DIO2), PA09 (DIO3), PA16, PA23
+ */
+
+/dts-v1/;
+#include <atmel/samd21.dtsi>
+#include <atmel/samx2xx17.dtsi>
+#include "catsniffer_v2-pinctrl.dtsi"
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	model = "CatSniffer v2 (SAMD21E17A)";
+	compatible = "electroniccats,catsniffer-v2", "atmel,samd21e17a", "atmel,samd21";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+		zephyr,code-partition = &code_partition;
+		uart-cc1352 = &sercom0;
+	};
+
+	aliases {
+		pin-reset = &cc1352_reset;
+		pin-boot  = &cc1352_boot;
+		led0      = &led_1;
+		led1      = &led_2;
+		led2      = &led_3;
+		ctf1      = &ctf1_pin;
+		ctf2      = &ctf2_pin;
+		ctf3      = &ctf3_pin;
+		lora0     = &sx1262;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_1: led1 {
+			gpios = <&porta 27 GPIO_ACTIVE_HIGH>;
+			label = "LED1";
+		};
+		led_2: led2 {
+			gpios = <&porta 28 GPIO_ACTIVE_HIGH>;
+			label = "LED2";
+		};
+		led_3: led3 {
+			gpios = <&porta 0 GPIO_ACTIVE_HIGH>;
+			label = "LED3";
+		};
+	};
+
+	gpio_pins {
+		compatible = "gpio-leds";
+
+		cc1352_reset: cc1352-reset {
+			gpios = <&porta 1 GPIO_ACTIVE_HIGH>;
+			label = "CC1352_RESET";
+		};
+		cc1352_boot: cc1352-boot {
+			gpios = <&porta 7 GPIO_ACTIVE_HIGH>;
+			label = "CC1352_BOOT";
+		};
+		ctf1_pin: ctf1 {
+			gpios = <&porta 14 GPIO_ACTIVE_HIGH>;
+			label = "CTF1";
+		};
+		ctf2_pin: ctf2 {
+			gpios = <&porta 11 GPIO_ACTIVE_HIGH>;
+			label = "CTF2";
+		};
+		ctf3_pin: ctf3 {
+			gpios = <&porta 10 GPIO_ACTIVE_HIGH>;
+			label = "CTF3";
+		};
+	};
+};
+
+&cpu0 {
+	clock-frequency = <48000000>;
+};
+
+/* samx2xx17.dtsi already sets flash=128KB, sram=16KB; only add partitions */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "uf2-bootloader";
+			reg = <0x00000000 DT_SIZE_K(8)>;
+			read-only;
+		};
+
+		code_partition: partition@2000 {
+			label = "code-partition";
+			reg = <0x00002000 DT_SIZE_K(120)>;
+			read-only;
+		};
+
+	};
+};
+
+/* CC1352P1 UART - SERCOM0, 921600 baud
+ * TX = PA04 (PAD0, function D), RX = PA05 (PAD1, function D)
+ * txpo = 0 -> TX on PAD0, rxpo = 1 -> RX on PAD1
+ */
+&sercom0 {
+	status = "okay";
+	compatible = "atmel,sam0-uart";
+	current-speed = <921600>;
+	rxpo = <1>;
+	txpo = <0>;
+
+	pinctrl-0 = <&sercom0_uart_default>;
+	pinctrl-names = "default";
+};
+
+/* SX1262 SPI - SERCOM3
+ * DIPO = 0 -> MISO on PAD0 = PA22 (function C)
+ * DOPO = 1 -> MOSI on PAD2 = PA18 (function D), SCK on PAD3 = PA19 (function D)
+ * CS = PA17 as GPIO software chip-select (active low)
+ */
+&sercom3 {
+	status = "okay";
+	compatible = "atmel,sam0-spi";
+	dipo = <0>;
+	dopo = <1>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	cs-gpios = <&porta 17 GPIO_ACTIVE_LOW>;
+
+	pinctrl-0 = <&sercom3_spi_default>;
+	pinctrl-names = "default";
+
+	sx1262: sx1262@0 {
+		compatible = "semtech,sx1262";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+
+		reset-gpios = <&porta 8 GPIO_ACTIVE_LOW>;
+		antenna-enable-gpios = <&porta 15 GPIO_ACTIVE_HIGH>;
+		busy-gpios  = <&porta 2  GPIO_ACTIVE_HIGH>;
+		dio1-gpios  = <&porta 3 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* USB - SAMD21 native USB device controller, 3x CDC-ACM */
+zephyr_udc0: &usb0 {
+	status = "okay";
+
+	pinctrl-0 = <&usb_dc_default>;
+	pinctrl-names = "default";
+
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Cat-Bridge";
+		tx-fifo-size = <128>;
+		rx-fifo-size = <128>;
+	};
+
+	cdc_acm_uart1: cdc_acm_uart1 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Cat-LoRa";
+		tx-fifo-size = <128>;
+		rx-fifo-size = <128>;
+	};
+
+	cdc_acm_uart2: cdc_acm_uart2 {
+		compatible = "zephyr,cdc-acm-uart";
+		label = "Cat-Shell";
+		tx-fifo-size = <128>;
+		rx-fifo-size = <128>;
+	};
+};
