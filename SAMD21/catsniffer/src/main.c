@@ -71,7 +71,7 @@ static const struct device *lora_dev;
 // Thread definitions, minimized for the SAMD21 16 KB RAM
 #define LORA_THREAD_STACK_SIZE 1024
 K_THREAD_STACK_DEFINE(lora_thread_stack, LORA_THREAD_STACK_SIZE);
-static struct k_thread lora_thread;
+struct k_thread lora_thread;
 K_SEM_DEFINE(lora_data_sem, 0, 1);
 static bool lora_async_rx_active;
 static bool fsk_async_rx_active;
@@ -199,42 +199,84 @@ static int enable_usb_device_next(void)
 	return 0;
 }
 
-// CC1352 UART interrupt handler
+// CC1352 UART RX: DMA-driven async reception.
+//
+// The SAM0 SERCOM has no RX FIFO and at 921600 baud a byte arrives every
+// 11 us, which a per-byte interrupt path cannot sustain on a 48 MHz M0+.
+// The DMA fills alternating chunk buffers; the callback moves each ready
+// chunk into the bridge ring buffer. TX stays interrupt driven.
+#define CC1352_RX_CHUNK 64
+#define CC1352_RX_TIMEOUT_US 4000 /* flush tick = 1 ms (continuous DMA) */
+
+static uint8_t cc1352_rx_bufs[2][CC1352_RX_CHUNK];
+static uint8_t cc1352_rx_next;
+
+static void cc1352_uart_async_cb(const struct device *dev,
+				 struct uart_event *evt, void *user_data)
+{
+	switch (evt->type) {
+	case UART_RX_RDY: {
+		uint32_t written = safe_ring_buf_put(
+			&rb_cc1352_to_usb,
+			evt->data.rx.buf + evt->data.rx.offset,
+			evt->data.rx.len);
+		if (written < evt->data.rx.len) {
+			catsniffer.ring_overflow_count +=
+				(evt->data.rx.len - written);
+		}
+		uart_irq_tx_enable(cdc0_dev);
+		break;
+	}
+	case UART_RX_BUF_REQUEST:
+		uart_rx_buf_rsp(dev, cc1352_rx_bufs[cc1352_rx_next],
+				CC1352_RX_CHUNK);
+		cc1352_rx_next ^= 1;
+		break;
+	case UART_RX_STOPPED:
+		trace_event(TR_CB_STOP);
+		if (evt->data.rx_stop.reason & UART_ERROR_OVERRUN) {
+			catsniffer.uart_overrun_count++;
+		}
+		break;
+	case UART_RX_DISABLED:
+		trace_event(TR_CB_DIS);
+		/* Restart reception unless a reconfiguration is in progress */
+		if (catsniffer.baud != 0) {
+			cc1352_rx_next = 0;
+			uart_rx_enable(dev, cc1352_rx_bufs[0], CC1352_RX_CHUNK,
+				       CC1352_RX_TIMEOUT_US);
+			cc1352_rx_next = 1;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static int cc1352_rx_start(void)
+{
+	cc1352_rx_next = 1;
+	return uart_rx_enable(uart_cc1352, cc1352_rx_bufs[0], CC1352_RX_CHUNK,
+			      CC1352_RX_TIMEOUT_US);
+}
+
+// CC1352 UART interrupt handler (TX only, RX is handled by DMA)
 static void cc1352_uart_interrupt_handler(const struct device *dev,
 					  void *user_data)
 {
-	while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
-		if (uart_irq_rx_ready(dev)) {
-			/* Check for hardware UART FIFO overrun */
-			int err = uart_err_check(dev);
-			if (err > 0 && (err & UART_ERROR_OVERRUN)) {
-				catsniffer.uart_overrun_count++;
-			}
+	trace_event(TR_TX_ISR);
+	if (uart_irq_update(dev) && uart_irq_tx_ready(dev)) {
+		uint8_t byte;
 
-			uint8_t buf[64];
-			int len = uart_fifo_read(dev, buf, sizeof(buf));
-			if (len > 0) {
-				uint32_t written = safe_ring_buf_put(
-					&rb_cc1352_to_usb, buf, len);
-				if (written < (uint32_t)len) {
-					catsniffer.ring_overflow_count +=
-						(len - written);
-				}
-				uart_irq_tx_enable(cdc0_dev);
-			}
-		}
-
-		if (uart_irq_tx_ready(dev)) {
-			uint8_t buf[64];
-			int len = safe_ring_buf_get(&rb_usb_to_cc1352, buf,
-						    sizeof(buf));
-			if (len > 0) {
-				uart_fifo_fill(dev, buf, len);
-			} else {
-				uart_irq_tx_disable(dev);
-			}
+		if (safe_ring_buf_get(&rb_usb_to_cc1352, &byte, 1) == 1) {
+			uart_fifo_fill(dev, &byte, 1);
+			trace_event(TR_TX_FILL);
+		} else {
+			uart_irq_tx_disable(dev);
+			trace_event(TR_TX_DIS);
 		}
 	}
+	trace_event(TR_TX_EXIT);
 }
 
 // CDC0 (CC1352) interrupt handler - PURE BRIDGE
@@ -247,6 +289,7 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
 			for (int i = 0; i < len; i++) {
 				uint8_t data = buf[i];
 				safe_ring_buf_put(&rb_usb_to_cc1352, &data, 1);
+				trace_event(TR_CDC0_TX);
 				uart_irq_tx_enable(uart_cc1352);
 			}
 		}
@@ -265,39 +308,20 @@ static void cdc0_interrupt_handler(const struct device *dev, void *user_data)
 }
 
 // CDC2 (Config/Debug) interrupt handler - TEXT SHELL
+// Runs on the USB work queue: only echo and queue bytes. Commands are
+// parsed and executed by the main thread (see shell_poll()).
 static void cdc2_interrupt_handler(const struct device *dev, void *user_data)
 {
 	while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
 		if (uart_irq_rx_ready(dev)) {
-			uint8_t buf[64];
+			uint8_t buf[32];
 			int len = uart_fifo_read(dev, buf, sizeof(buf));
 
-			for (int i = 0; i < len; i++) {
-				uint8_t data = buf[i];
-
-				// Echo back for terminal feeling?
-				safe_ring_buf_put(&rb_config_to_usb, &data, 1);
+			if (len > 0) {
+				// Echo back for terminal feeling
+				safe_ring_buf_put(&rb_config_to_usb, buf, len);
 				uart_irq_tx_enable(dev);
-
-				// Simple line buffering
-				if (data == '\n' || data == '\r') {
-					if (catsniffer.command_data_len > 0) {
-						catsniffer.command_data
-							[catsniffer
-								 .command_data_len] =
-							'\0';
-						process_command(
-							catsniffer.command_data,
-							catsniffer
-								.command_data_len);
-						catsniffer.command_data_len = 0;
-					}
-				} else if (catsniffer.command_data_len <
-					   COMMAND_BUF_SIZE - 1) {
-					catsniffer.command_data
-						[catsniffer.command_data_len++] =
-						data;
-				}
+				safe_ring_buf_put(&rb_usb_to_config, buf, len);
 			}
 		}
 
@@ -310,6 +334,27 @@ static void cdc2_interrupt_handler(const struct device *dev, void *user_data)
 			} else {
 				uart_irq_tx_disable(dev);
 			}
+		}
+	}
+}
+
+// Main-thread shell parser: line-buffer queued bytes and run commands
+static void shell_poll(void)
+{
+	uint8_t data;
+
+	while (safe_ring_buf_get(&rb_usb_to_config, &data, 1) == 1) {
+		if (data == '\n' || data == '\r') {
+			if (catsniffer.command_data_len > 0) {
+				catsniffer.command_data
+					[catsniffer.command_data_len] = '\0';
+				process_command(catsniffer.command_data,
+						catsniffer.command_data_len);
+				catsniffer.command_data_len = 0;
+			}
+		} else if (catsniffer.command_data_len < COMMAND_BUF_SIZE - 1) {
+			catsniffer.command_data[catsniffer.command_data_len++] =
+				data;
 		}
 	}
 }
@@ -363,17 +408,23 @@ void change_baud(unsigned long new_baud)
 	if (new_baud == catsniffer.baud)
 		return;
 
+	trace_event(TR_BAUD_0);
 	uart_irq_tx_disable(uart_cc1352);
-	uart_irq_rx_disable(uart_cc1352);
+	/* baud == 0 tells the async callback not to auto-restart RX */
+	catsniffer.baud = 0;
+	uart_rx_disable(uart_cc1352);
+	k_msleep(2);
+	trace_event(TR_BAUD_1);
 
 	struct uart_config cfg;
 	uart_config_get(uart_cc1352, &cfg);
 	cfg.baudrate = new_baud;
 	uart_configure(uart_cc1352, &cfg);
 	catsniffer.baud = new_baud;
+	trace_event(TR_BAUD_2);
 
-	// Re-enable interrupts
-	uart_irq_rx_enable(uart_cc1352);
+	cc1352_rx_start();
+	trace_event(TR_BAUD_3);
 }
 
 void change_band(unsigned long new_band)
@@ -429,11 +480,39 @@ void change_mode(unsigned long new_mode)
 
 void shell_reply(const char *msg)
 {
+	size_t len;
+	int wait_ms = 0;
+
 	if (!msg)
 		return;
-	safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)msg, strlen(msg));
-	if (cdc2_dev)
-		uart_irq_tx_enable(cdc2_dev);
+	len = strlen(msg);
+	/* The shell ring is small on this board (RING_BUF_SIZE_SHELL), so a
+	 * reply may be larger than the ring. Write it in pieces and wait for
+	 * the USB side to drain in between (thread context only, bounded).
+	 */
+	while (len > 0) {
+		uint32_t space = ring_buf_space_get(&rb_config_to_usb);
+
+		if (space == 0) {
+			if (k_is_in_isr() || wait_ms >= 500) {
+				trace_event(TR_WAIT_CAP);
+				return;
+			}
+			if (cdc2_dev)
+				uart_irq_tx_enable(cdc2_dev);
+			k_msleep(1);
+			wait_ms++;
+			continue;
+		}
+		if (space > len)
+			space = len;
+		safe_ring_buf_put(&rb_config_to_usb, (const uint8_t *)msg,
+				  space);
+		msg += space;
+		len -= space;
+		if (cdc2_dev)
+			uart_irq_tx_enable(cdc2_dev);
+	}
 }
 
 int queue_radio_command(const char *cmd_line)
@@ -1503,7 +1582,13 @@ int main(void)
 	}
 
 	uart_irq_callback_set(uart_cc1352, cc1352_uart_interrupt_handler);
-	uart_irq_rx_enable(uart_cc1352);
+	uart_callback_set(uart_cc1352, cc1352_uart_async_cb, NULL);
+	ret = cc1352_rx_start();
+	if (ret < 0) {
+		const char *msg = "CC1352 UART RX start failed\r\n";
+		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)msg,
+				  strlen(msg));
+	}
 
 	reset_cc1352();
 
@@ -1555,13 +1640,26 @@ int main(void)
 			uart_irq_tx_enable(cdc2_dev);
 	}
 
+	{
+		/* Startup diagnostics: main stack low-water mark after init */
+		size_t unused = 0;
+		char diag[48];
+
+		k_thread_stack_space_get(k_current_get(), &unused);
+		snprintf(diag, sizeof(diag), "Boot: main stack unused=%u\r\n",
+			 (unsigned int)unused);
+		safe_ring_buf_put(&rb_config_to_usb, (uint8_t *)diag,
+				  strlen(diag));
+	}
+
 	// Start LoRa thread
 	k_thread_create(&lora_thread, lora_thread_stack, LORA_THREAD_STACK_SIZE,
 			lora_thread_func, NULL, NULL, NULL,
 			LORA_THREAD_PRIORITY, 0, K_NO_WAIT);
 
-	// Main loop with LED animation
+	// Main loop: shell commands and LED animation
 	while (1) {
+		shell_poll();
 		if (catsniffer.led_identify) {
 			k_msleep(10);
 			continue;

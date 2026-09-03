@@ -11,3 +11,4 @@ SAMD21/modules/
 SAMD21/bootloader/
 SAMD21/tools/
 SAMD21/.west/
+.cache/

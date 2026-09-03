@@ -121,12 +121,19 @@
  * TX = PA04 (PAD0, function D), RX = PA05 (PAD1, function D)
  * txpo = 0 -> TX on PAD0, rxpo = 1 -> RX on PAD1
  */
+&dmac {
+	status = "okay";
+};
+
+/* DMA triggers (SAMD21 datasheet, DMAC trigger table): SERCOM0 RX = 1, TX = 2 */
 &sercom0 {
 	status = "okay";
 	compatible = "atmel,sam0-uart";
 	current-speed = <921600>;
 	rxpo = <1>;
 	txpo = <0>;
+	dmas = <&dmac 0 1>, <&dmac 1 2>;
+	dma-names = "rx", "tx";
 
 	pinctrl-0 = <&sercom0_uart_default>;
 	pinctrl-names = "default";
@@ -179,14 +186,14 @@ zephyr_udc0: &usb0 {
 	cdc_acm_uart1: cdc_acm_uart1 {
 		compatible = "zephyr,cdc-acm-uart";
 		label = "Cat-LoRa";
-		tx-fifo-size = <128>;
-		rx-fifo-size = <128>;
+		tx-fifo-size = <64>;
+		rx-fifo-size = <64>;
 	};
 
 	cdc_acm_uart2: cdc_acm_uart2 {
 		compatible = "zephyr,cdc-acm-uart";
 		label = "Cat-Shell";
-		tx-fifo-size = <128>;
-		rx-fifo-size = <128>;
+		tx-fifo-size = <64>;
+		rx-fifo-size = <64>;
 	};
 };

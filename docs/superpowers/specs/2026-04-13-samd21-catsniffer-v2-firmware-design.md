@@ -207,3 +207,40 @@ reused as-is (same VID/PID, same port labels).
 - SRAM: the budget above leaves little headroom. Overflows show as hard faults
   during LoRa config; `debug.conf` plus `CONFIG_THREAD_ANALYZER` is the tool
   to measure stack use if that happens.
+
+## Implementation notes from hardware bring-up (2026-09-02)
+
+These supersede the sections above where they differ.
+
+- Clock: the board is crystal-less. Zephyr's SoC init locks the DFLL48M to
+  OSC8M (about 1% error), which is outside the USB tolerance; the host read
+  the device descriptor but the configuration descriptor failed.
+  `src/clock_usbcrm.c` re-locks the DFLL to the USB SOF (USBCRM) at
+  PRE_KERNEL_1, mirroring the Arduino core.
+- CC1352 UART RX: the SERCOM has no RX FIFO; the interrupt-driven path lost
+  about half the bytes at 921600 baud. RX now uses DMA through the async
+  UART API. The stock `uart_sam0` timeout mode stops the DMA every tick and
+  restarts it from the next RXC interrupt, which still lost 2-4 bytes per
+  restart, so the fork gained `CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS`
+  (DMA restarted immediately, data flushed every timeout/4) plus a DMA
+  write-back seeding fix. Patch: `SAMD21/zephyr-patches/`.
+- `CONFIG_UART_EXCLUSIVE_API_CALLBACKS=n` is required: with the default,
+  `uart_callback_set()` erases the interrupt-driven TX callback and the
+  first TX interrupt storms (board hangs, all ports dead, no fault).
+- Shell commands now run in the main thread (`shell_poll()`); the CDC
+  callback only queues bytes. With no dedicated CDC work queue the class
+  runs on the 1 KB system work queue, and running `boot` (300 ms of sleeps)
+  or `status` there overflowed that stack.
+- `shell_reply()` is chunked and blocking (bounded 500 ms) so replies larger
+  than the 128 B shell ring are delivered whole.
+- Diagnostics added: `src/fault_log.c` (crash log and event trace in
+  no-init RAM, survive the UF2 bootloader), stack headroom per thread and
+  the trace in `status`.
+
+Final memory budget (production build): FLASH 79572 B of 120 KB, RAM
+16076 B of 16384 B. Rings: bridge 256 x2, LoRa 264 x2, shell 128 x2.
+Stacks: main 1536, LoRa 1024, ISR 768, sysworkq 1024, usbd 1024,
+udc_sam0 512. Measured headroom after exercising every command: main 168,
+LoRa 304, ISR 436 bytes.
+
+Verification results are recorded in `SAMD21/catsniffer/README.md`.
