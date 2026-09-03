@@ -4,3 +4,10 @@
 build*
 build/*
 .vscode
+
+# west workspace clones next to the SAMD21 application
+SAMD21/zephyr/
+SAMD21/modules/
+SAMD21/bootloader/
+SAMD21/tools/
+SAMD21/.west/

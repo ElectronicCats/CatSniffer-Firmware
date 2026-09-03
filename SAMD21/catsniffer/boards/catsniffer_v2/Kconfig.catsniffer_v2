@@ -1,0 +1,5 @@
+# Copyright (c) 2026 Electronic Cats
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_CATSNIFFER_V2
+	select SOC_SAMD21E17A

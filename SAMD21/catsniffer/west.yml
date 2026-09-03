@@ -1,0 +1,11 @@
+manifest:
+  remotes:
+    - name: wero1414
+      url-base: https://github.com/wero1414
+  projects:
+    - name: zephyr
+      remote: wero1414
+      revision: fsk-native-driver
+      import: true
+  self:
+    path: SAMD21/catsniffer

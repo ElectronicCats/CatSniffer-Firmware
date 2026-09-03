@@ -1,0 +1,158 @@
+/*
+ * Catsniffer Dual USB CDC-ACM Header
+ * Eduardo Contreras @ Electronic Cats 2026
+ */
+
+#ifndef CATSNIFFER_H
+#define CATSNIFFER_H
+
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <catsniffer_usbd.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/usb/usbd.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/lora.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+#include <string.h>
+#include <stdlib.h>
+#include <fw_version.h>
+
+// Ring buffer and command buffer sizes - kept small for SAMD21 (16KB total RAM)
+// Ring buffer sizes, sized for the 16 KB SRAM (see design spec)
+#define RING_BUF_SIZE_BRIDGE CONFIG_CATSNIFFER_BRIDGE_RING_SIZE
+#define RING_BUF_SIZE_LORA 256
+#define RING_BUF_SIZE_SHELL 256
+#define COMMAND_BUF_SIZE 256
+
+// Define Thead priorities
+#define LORA_THREAD_PRIORITY K_PRIO_COOP(5)
+#define MAIN_THREAD_PRIORITY K_PRIO_COOP(7)
+
+// Helper macro to simplify GPIO setup
+#define INIT_GPIO(name, flags)                                         \
+	const struct gpio_dt_spec name =                               \
+		GPIO_DT_SPEC_GET_OR(DT_ALIAS(name), gpios, { 0 });     \
+	do {                                                           \
+		if (!device_is_ready(name.port)) {                     \
+			printk("Error: " #name " device not ready\n"); \
+			return 1;                                      \
+		}                                                      \
+		gpio_pin_configure_dt(&name, flags);                   \
+	} while (0)
+
+// Mode definitions
+enum MODE {
+	PASSTHROUGH = 0, // CC1352 passthrough @ 921600 baud
+	BOOT = 1,	 // CC1352 bootloader @ 500000 baud
+};
+
+// Band definitions
+enum BAND {
+	GIG = 0,      // 2.4GHz CC1352
+	SUBGIG_1 = 1, // Sub-GHz CC1352
+	SUBGIG_2 = 2  // LoRa SX1262
+};
+
+// LoRa mode definitions
+enum LORA_MODE {
+	LORA_MODE_STREAM = 0,  // Default: raw binary
+	LORA_MODE_COMMAND = 1, // Text commands
+};
+
+// LoRa configuration structure
+typedef struct {
+	uint32_t frequency;		      // Hz (default: 915000000)
+	uint8_t spreading_factor;	      // SF_7 to SF_12 (default: SF_7)
+	enum lora_signal_bandwidth bandwidth; // BW_125_KHZ, BW_250_KHZ,
+					      // BW_500_KHZ
+	uint8_t coding_rate; // CR_4_5, CR_4_6, CR_4_7, CR_4_8 (default: CR_4_5)
+	int8_t tx_power;     // -9 to 22 dBm (default: 20)
+	uint16_t preamble_len;	// Default: 12
+	bool iq_inverted;	// IQ inversion (default: false/normal)
+	bool public_network;	// Sync word: false=private (0x12), true=public
+				// (0x34)
+	uint8_t lora_sync_word; // Custom sync word spec value (e.g. 0x2D for
+				// Meshtastic). 0 = derive from public_network.
+	bool config_pending;	// true if changes not yet applied
+} lora_config_t;
+
+// FSK configuration structure
+typedef struct {
+	uint32_t frequency; // Hz (default: 915000000)
+	uint32_t bitrate;   // Bit rate in bps (default: 50000)
+	uint32_t fdev;	    // Frequency deviation in Hz (default: 25000)
+	enum lora_fsk_shaping shaping;	   // Gaussian BT shaping
+					   // (LORA_FSK_SHAPING_*)
+	enum lora_fsk_bandwidth bandwidth; // RX bandwidth (FSK_BW_* from
+					   // lora.h)
+	int8_t tx_power;		   // -9 to 22 dBm (default: 14)
+	uint16_t preamble_len; // Preamble length in bytes (default: 5)
+	uint8_t sync_word[8];  // Sync word bytes (default: 0x12, 0xAD)
+	uint8_t sync_word_len; // Sync word length (default: 2)
+	bool fixed_length;     // Fixed vs variable length packets
+	uint8_t payload_len;   // Payload length for fixed mode
+	bool crc_on;	       // Enable CRC (default: true)
+	bool whitening;	       // Enable whitening (default: true)
+	bool config_pending;   // true if changes not yet applied
+} fsk_config_t;
+
+// Catsniffer state structure
+typedef struct {
+	uint8_t mode;
+	uint8_t band;
+	unsigned long led_interval;
+	int64_t previous_millis;
+	unsigned long baud;
+	bool command_recognized;
+	uint8_t command_counter;
+	char command_data[COMMAND_BUF_SIZE];
+	size_t command_data_len;
+	// LoRa state
+	uint8_t lora_mode;	   // LORA_MODE_STREAM or LORA_MODE_COMMAND
+	lora_config_t lora_config; // Current LoRa configuration
+	bool lora_initialized;	   // Track initialization state
+	bool lora_config_lock;	   // Lock flag to pause LoRa operations during
+				   // reconfiguration
+	// FSK state
+	enum lora_modulation current_modulation; // LORA_MOD_LORA or
+						 // LORA_MOD_FSK
+	fsk_config_t fsk_config;		 // Current FSK configuration
+	bool fsk_initialized; // Track FSK initialization state
+	// Packet loss counters (CC1352 UART bridge)
+	uint32_t uart_overrun_count;  // UART hardware FIFO overrun events
+	uint32_t ring_overflow_count; // Bytes dropped due to ring buffer full
+	// Identify state
+	bool led_identify; // true while identify LED blink sequence is active
+} catsniffer_t;
+
+// Global catsniffer instance
+extern catsniffer_t catsniffer;
+
+// LoRa command format (CDC1):
+// TX <hex_data>     - Send LoRa packet (e.g., "TX 48656C6C6F")
+// RX [timeout_ms]   - Enter receive mode (e.g., "RX 5000" or "RX" for
+// continuous) FREQ <frequency>  - Set frequency in Hz (e.g., "FREQ 868000000")
+// SF <7-12>         - Set spreading factor (e.g., "SF 7")
+// PWR <-9 to 22>    - Set TX power in dBm (e.g., "PWR 14")
+// STATUS            - Get device status
+
+// Function prototypes
+void reset_cc1352(void);
+void boot_mode_cc1352(void);
+void change_baud(unsigned long new_baud);
+void change_band(unsigned long new_band);
+void change_mode(unsigned long new_mode);
+void process_lora_command(char *cmd_line);
+int queue_radio_command(const char *cmd_line);
+int apply_lora_config(void);
+
+// FSK function prototypes
+int apply_fsk_config(void);
+int switch_to_lora(void);
+int switch_to_fsk(void);
+
+#endif /* CATSNIFFER_H */

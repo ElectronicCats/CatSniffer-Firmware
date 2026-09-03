@@ -1,0 +1,40 @@
+# Copyright (c) 2026 Electronic Cats
+# SPDX-License-Identifier: Apache-2.0
+
+config CATSNIFFER_BRIDGE_RING_SIZE
+	int "Cat-Bridge ring buffer size in bytes (each direction)"
+	default 512
+	help
+	  Size of the two ring buffers between the Cat-Bridge CDC port and the
+	  CC1352 UART. Larger values tolerate longer USB stalls at 921600 baud;
+	  smaller values free SRAM for debug builds.
+
+source "Kconfig.zephyr"
+
+config SAMPLE_USBD_PID
+	hex "USB PID"
+	default 0xBABB
+
+config SAMPLE_USBD_PRODUCT
+	string "USB product name"
+	default "Catsniffer"
+
+config SAMPLE_USBD_MANUFACTURER
+	string "USB manufacturer name"
+	default "Electronic Cats"
+
+config SAMPLE_USBD_SELF_POWERED
+	bool
+	default n
+
+config SAMPLE_USBD_REMOTE_WAKEUP
+	bool
+	default n
+
+config SAMPLE_USBD_MAX_POWER
+	int
+	default 100
+
+config SAMPLE_USBD_20_EXTENSION_DESC
+	bool
+	default n
