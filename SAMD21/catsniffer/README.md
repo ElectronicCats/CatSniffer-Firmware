@@ -135,6 +135,9 @@ Sniffer 1.8.0, on macOS:
   352 KB backup read (10.5 min, tool-bound) and Sniffle written and CRC
   verified in 7.5 s, zero UART overruns and zero ring drops in both
   directions.
+- Sniffle end to end (2026-09-03): upstream `python_cli/sniff_receiver.py`
+  on the v2's Cat-Bridge captured 1833 BLE advertising frames in 25 s to a
+  pcap; tshark dissects them (dozens of advertisers, RSSI -59 to -75 dBm).
 - Sniffle at 921600 streaming into the bridge: zero SERCOM overruns and zero
   DMA regressions over repeated 30 s runs; a full-rate (92 KB/s) stream was
   received intact for 30 s.
