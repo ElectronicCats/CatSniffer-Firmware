@@ -24,8 +24,8 @@
 // Ring buffer and command buffer sizes - kept small for SAMD21 (16KB total RAM)
 // Ring buffer sizes, sized for the 16 KB SRAM (see design spec)
 #define RING_BUF_SIZE_BRIDGE CONFIG_CATSNIFFER_BRIDGE_RING_SIZE
-#define RING_BUF_SIZE_LORA 256
-#define RING_BUF_SIZE_SHELL 256
+#define RING_BUF_SIZE_LORA 264 /* one 255 B packet + RX header */
+#define RING_BUF_SIZE_SHELL 128
 #define COMMAND_BUF_SIZE 256
 
 // Define Thead priorities
@@ -131,6 +131,34 @@ typedef struct {
 
 // Global catsniffer instance
 extern catsniffer_t catsniffer;
+extern struct k_thread lora_thread;
+
+// Crash log kept in no-init RAM across resets (fault_log.c)
+int fault_log_format(char *buf, size_t len);
+void trace_event(uint8_t code);
+int trace_format(char *buf, size_t len);
+/* trace codes */
+#define TR_TX_ISR 0x01
+#define TR_TX_FILL 0x02
+#define TR_TX_DIS 0x03
+#define TR_TX_EXIT 0x04
+#define TR_CB_RDY 0x10
+#define TR_CB_REQ 0x11
+#define TR_CB_STOP 0x12
+#define TR_CB_DIS 0x13
+#define TR_BAUD_0 0x20
+#define TR_BAUD_1 0x21
+#define TR_BAUD_2 0x22
+#define TR_BAUD_3 0x23
+#define TR_BAUD_4 0x24
+#define TR_CDC0_TX 0x30
+#define TR_CMD 0x40
+#define TR_WAIT_IN 0x50
+#define TR_WAIT_OUT 0x51
+#define TR_WAIT_CAP 0x52
+#define TR_CDC2_PULL 0x60
+#define TR_CDC2_DIS 0x61
+#define TR_CDC2_NOTRDY 0x62
 
 // LoRa command format (CDC1):
 // TX <hex_data>     - Send LoRa packet (e.g., "TX 48656C6C6F")

@@ -3,7 +3,7 @@
 
 config CATSNIFFER_BRIDGE_RING_SIZE
 	int "Cat-Bridge ring buffer size in bytes (each direction)"
-	default 512
+	default 256
 	help
 	  Size of the two ring buffers between the Cat-Bridge CDC port and the
 	  CC1352 UART. Larger values tolerate longer USB stalls at 921600 baud;

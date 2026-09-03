@@ -239,9 +239,40 @@ static void cmd_reboot(char *args)
 	sys_reboot(SYS_REBOOT_COLD);
 }
 
+/* ISR stack headroom: count the untouched 0xAA fill left by CONFIG_INIT_STACKS
+ */
+K_KERNEL_STACK_ARRAY_DECLARE(z_interrupt_stacks, CONFIG_MP_MAX_NUM_CPUS,
+			     CONFIG_ISR_STACK_SIZE);
+static size_t isr_stack_unused(void)
+{
+	const uint8_t *p =
+		(const uint8_t *)K_KERNEL_STACK_BUFFER(z_interrupt_stacks[0]);
+	size_t n = 0;
+
+	while (n < K_KERNEL_STACK_SIZEOF(z_interrupt_stacks[0]) &&
+	       p[n] == 0xAA) {
+		n++;
+	}
+	return n;
+}
+
+static void stack_report_cb(const struct k_thread *t, void *user_data)
+{
+	char *buf = user_data;
+	size_t unused = 0;
+
+	k_thread_stack_space_get(t, &unused);
+	snprintf(buf, 96, "  thread %p prio=%d stack=%u unused=%u\r\n", t,
+		 t->base.prio, (unsigned int)t->stack_info.size,
+		 (unsigned int)unused);
+	shell_reply(buf);
+}
+
 static void cmd_status(char *args)
 {
-	char buf[320];
+	char buf[256];
+	trace_format(buf, sizeof(buf));
+	shell_reply(buf);
 	const char *mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ?
 				       "Stream" :
 				       "Command";
@@ -272,6 +303,19 @@ static void cmd_status(char *args)
 		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes\r\n",
 		 catsniffer.uart_overrun_count, catsniffer.ring_overflow_count);
 	shell_reply(loss_buf);
+
+	/* SAMD21 only: crash log and stack headroom (16 KB SRAM budget) */
+	size_t main_unused = 0, lora_unused = 0;
+	k_thread_stack_space_get(k_current_get(), &main_unused);
+	k_thread_stack_space_get(&lora_thread, &lora_unused);
+	snprintf(loss_buf, sizeof(loss_buf),
+		 "Stack unused: main=%u lora=%u isr=%u bytes\r\n",
+		 (unsigned int)main_unused, (unsigned int)lora_unused,
+		 (unsigned int)isr_stack_unused());
+	shell_reply(loss_buf);
+	fault_log_format(loss_buf, sizeof(loss_buf));
+	shell_reply(loss_buf);
+	k_thread_foreach(stack_report_cb, loss_buf);
 }
 
 static void cmd_loss_reset(char *args)
