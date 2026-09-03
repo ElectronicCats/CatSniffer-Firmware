@@ -1,3 +1,26 @@
+From cd0420b9d68e313a15821d61b77771282ebbd67b Mon Sep 17 00:00:00 2001
+From: Eduardo Contreras <werowero.edy@gmail.com>
+Date: Wed, 2 Sep 2026 19:50:28 -0600
+Subject: [PATCH 1/3] drivers: sam0: continuous DMA RX mode for UART, seed DMA
+ write-back on start
+
+- uart_sam0: add UART_SAM0_ASYNC_RX_CONTINUOUS. In this mode the RX DMA
+  channel is only paused to read its progress and restarted at once, and
+  received bytes are delivered every timeout/4. The default mode stops the
+  DMA on every tick and re-arms it from the next RXC interrupt, which loses
+  bytes above ~250 kbaud because the SERCOM has no RX FIFO.
+- uart_sam0: request the next RX buffer when continuous reception starts,
+  release irq_lock on the dma_reload error path, and ignore inconsistent
+  write-back counts in rx_disable and the continuous tick.
+- dma_sam0: seed the write-back BTCNT when a channel is started so that
+  dma_get_status() on a channel that has not moved data yet reports the
+  full block as pending instead of a stale count.
+---
+ drivers/dma/dma_sam0.c      | 12 ++++-
+ drivers/serial/Kconfig.sam0 | 12 +++++
+ drivers/serial/uart_sam0.c  | 87 +++++++++++++++++++++++++++++++++++--
+ 3 files changed, 106 insertions(+), 5 deletions(-)
+
 diff --git a/drivers/dma/dma_sam0.c b/drivers/dma/dma_sam0.c
 index d20d3bc1868..06ceb2321ed 100644
 --- a/drivers/dma/dma_sam0.c
@@ -183,3 +206,460 @@ index 242076b55d2..94e5992f60a 100644
  		size_t rx_processed = dev_data->rx_len - st.pending_length;
 
  		uart_sam0_notify_rx_processed(dev_data, rx_processed);
+--
+2.53.0
+
+
+From 51ac3b55890ad7bcf863080785a852d64a449211 Mon Sep 17 00:00:00 2001
+From: Eduardo Contreras <werowero.edy@gmail.com>
+Date: Thu, 3 Sep 2026 13:48:20 -0600
+Subject: [PATCH 2/3] drivers: sam0: DMA suspend/resume, gap-free UART RX
+ buffer switch, overrun reporting
+
+- dma_sam0: implement dma_suspend()/dma_resume(). Suspend waits for the
+  channel's SUSP flag so the write-back descriptor is valid afterwards.
+- uart_sam0 continuous RX: read progress under suspend/resume instead of
+  stop/reload/start (no restart window, no stale write-back), restart the
+  DMA on the next buffer before running callbacks at block completion, and
+  report SERCOM BUFOVF as UART_RX_STOPPED from the tick since the async
+  path has no error interrupt.
+
+Measured on a SAMD21E17 bridging a CC1352 bootloader at 500 kbaud: byte
+loss went from about 1 per 6000 to none over 3000 transactions.
+---
+ drivers/dma/dma_sam0.c     | 59 ++++++++++++++++++++++++++
+ drivers/serial/uart_sam0.c | 84 ++++++++++++++++++++++++++++----------
+ 2 files changed, 122 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/dma/dma_sam0.c b/drivers/dma/dma_sam0.c
+index 06ceb2321ed..32d400835d5 100644
+--- a/drivers/dma/dma_sam0.c
++++ b/drivers/dma/dma_sam0.c
+@@ -302,6 +302,63 @@ static int dma_sam0_start(const struct device *dev, uint32_t channel)
+ 	return 0;
+ }
+
++/* Suspend a channel: the controller finishes the current beat and updates
++ * the write-back descriptor, so dma_get_status() reports exact progress.
++ */
++static int dma_sam0_suspend(const struct device *dev, uint32_t channel)
++{
++	unsigned int key = irq_lock();
++
++	ARG_UNUSED(dev);
++
++#ifdef DMAC_CHID_ID
++	DMA_REGS->CHID.reg = channel;
++	DMA_REGS->CHCTRLB.reg = (DMA_REGS->CHCTRLB.reg & ~DMAC_CHCTRLB_CMD_Msk) |
++				DMAC_CHCTRLB_CMD_SUSPEND;
++	/* Wait for the channel to actually suspend (end of current beat) so
++	 * the write-back descriptor is valid when the caller reads status.
++	 * The flag never sets for an idle/disabled channel; bound the wait.
++	 */
++	for (int i = 0; i < 64; i++) {
++		if (DMA_REGS->CHINTFLAG.bit.SUSP) {
++			DMA_REGS->CHINTFLAG.reg = DMAC_CHINTFLAG_SUSP;
++			break;
++		}
++	}
++#else
++	DMA_REGS->Channel[channel].CHCTRLB.reg = DMAC_CHCTRLB_CMD_SUSPEND;
++	for (int i = 0; i < 64; i++) {
++		if (DMA_REGS->Channel[channel].CHINTFLAG.bit.SUSP) {
++			DMA_REGS->Channel[channel].CHINTFLAG.reg = DMAC_CHINTFLAG_SUSP;
++			break;
++		}
++	}
++#endif
++
++	irq_unlock(key);
++
++	return 0;
++}
++
++static int dma_sam0_resume(const struct device *dev, uint32_t channel)
++{
++	unsigned int key = irq_lock();
++
++	ARG_UNUSED(dev);
++
++#ifdef DMAC_CHID_ID
++	DMA_REGS->CHID.reg = channel;
++	DMA_REGS->CHCTRLB.reg = (DMA_REGS->CHCTRLB.reg & ~DMAC_CHCTRLB_CMD_Msk) |
++				DMAC_CHCTRLB_CMD_RESUME;
++#else
++	DMA_REGS->Channel[channel].CHCTRLB.reg = DMAC_CHCTRLB_CMD_RESUME;
++#endif
++
++	irq_unlock(key);
++
++	return 0;
++}
++
+ static int dma_sam0_stop(const struct device *dev, uint32_t channel)
+ {
+ 	unsigned int key = irq_lock();
+@@ -469,6 +526,8 @@ static DEVICE_API(dma, dma_sam0_api) = {
+ 	.config = dma_sam0_config,
+ 	.start = dma_sam0_start,
+ 	.stop = dma_sam0_stop,
++	.suspend = dma_sam0_suspend,
++	.resume = dma_sam0_resume,
+ 	.reload = dma_sam0_reload,
+ 	.get_status = dma_sam0_get_status,
+ };
+diff --git a/drivers/serial/uart_sam0.c b/drivers/serial/uart_sam0.c
+index 94e5992f60a..257ccad1334 100644
+--- a/drivers/serial/uart_sam0.c
++++ b/drivers/serial/uart_sam0.c
+@@ -236,6 +236,22 @@ static void uart_sam0_dma_rx_done(const struct device *dma_dev, void *arg,
+ 		return;
+ 	}
+
++	/*
++	 * Continuous mode: restart on the next buffer before any callback so
++	 * the gap between blocks is only the interrupt latency. The SERCOM
++	 * holds two bytes, which is 22 us at 921600 baud.
++	 */
++	bool restarted = false;
++
++	if (IS_ENABLED(CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS) &&
++	    dev_data->rx_next_len) {
++		dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
++			   (uint32_t)(&(regs->DATA.reg)),
++			   (uint32_t)dev_data->rx_next_buf, dev_data->rx_next_len);
++		dma_start(cfg->dma_dev, cfg->rx_dma_channel);
++		restarted = true;
++	}
++
+ 	uart_sam0_notify_rx_processed(dev_data, dev_data->rx_len);
+
+ 	if (dev_data->async_cb) {
+@@ -272,9 +288,11 @@ static void uart_sam0_dma_rx_done(const struct device *dma_dev, void *arg,
+ 	dev_data->rx_next_len = 0U;
+ 	dev_data->rx_processed_len = 0U;
+
+-	dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
+-		   (uint32_t)(&(regs->DATA.reg)),
+-		   (uint32_t)dev_data->rx_buf, dev_data->rx_len);
++	if (!restarted) {
++		dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
++			   (uint32_t)(&(regs->DATA.reg)),
++			   (uint32_t)dev_data->rx_buf, dev_data->rx_len);
++	}
+
+ 	/*
+ 	 * If there should be a timeout, handle starting the DMA in the
+@@ -291,7 +309,9 @@ static void uart_sam0_dma_rx_done(const struct device *dma_dev, void *arg,
+ 	}
+
+ 	/* Otherwise, start the transfer immediately. */
+-	dma_start(cfg->dma_dev, cfg->rx_dma_channel);
++	if (!restarted) {
++		dma_start(cfg->dma_dev, cfg->rx_dma_channel);
++	}
+
+ 	if (IS_ENABLED(CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS) &&
+ 	    dev_data->rx_timeout_time != SYS_FOREVER_US) {
+@@ -310,12 +330,13 @@ static void uart_sam0_dma_rx_done(const struct device *dma_dev, void *arg,
+
+ #if CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS
+ /*
+- * Continuous mode: the DMA channel is only paused for the few cycles needed
+- * to read its progress, then restarted immediately. Received data is
+- * flushed to the application every timeout/4 tick. This avoids the byte
+- * loss of the default mode, which stops the DMA on every tick and re-arms
+- * it from the next RXC interrupt (too slow above ~250 kbaud on a SERCOM,
+- * which has no RX FIFO).
++ * Continuous mode: the DMA channel is suspended just long enough to read
++ * its progress (suspend forces the write-back descriptor update) and then
++ * resumed; no reload or restart is needed. Received data is flushed to the
++ * application every timeout/4 tick. This avoids the byte loss of the
++ * default mode, which stops the DMA on every tick and re-arms it from the
++ * next RXC interrupt (too slow above ~250 kbaud on a SERCOM, which has no
++ * RX FIFO).
+  */
+ static void uart_sam0_rx_timeout(struct k_work *work)
+ {
+@@ -332,9 +353,28 @@ static void uart_sam0_rx_timeout(struct k_work *work)
+ 		return;
+ 	}
+
+-	dma_stop(cfg->dma_dev, cfg->rx_dma_channel);
+-	if (dma_get_status(cfg->dma_dev, cfg->rx_dma_channel, &st) != 0 ||
+-	    st.pending_length == 0U) {
++	dma_suspend(cfg->dma_dev, cfg->rx_dma_channel);
++	if (dma_get_status(cfg->dma_dev, cfg->rx_dma_channel, &st) != 0) {
++		dma_resume(cfg->dma_dev, cfg->rx_dma_channel);
++		irq_unlock(key);
++		return;
++	}
++
++	/* The async path has no error interrupt: report SERCOM overruns here */
++	if (regs->STATUS.reg & SERCOM_USART_STATUS_BUFOVF) {
++		regs->STATUS.reg = SERCOM_USART_STATUS_BUFOVF;
++		if (dev_data->async_cb) {
++			struct uart_event evt = {
++				.type = UART_RX_STOPPED,
++				.data.rx_stop.reason = UART_ERROR_OVERRUN,
++			};
++
++			dev_data->async_cb(dev_data->dev, &evt,
++					   dev_data->async_cb_data);
++		}
++	}
++
++	if (st.pending_length == 0U) {
+ 		/* Buffer complete: the DMA ISR is pending and will restart */
+ 		irq_unlock(key);
+ 		return;
+@@ -344,15 +384,10 @@ static void uart_sam0_rx_timeout(struct k_work *work)
+ 		st.pending_length = dev_data->rx_len;
+ 	}
+
+-	size_t rx_processed = dev_data->rx_len - st.pending_length;
++	dma_resume(cfg->dma_dev, cfg->rx_dma_channel);
+
+-	dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
+-		   (uint32_t)(&(regs->DATA.reg)),
+-		   (uint32_t)(dev_data->rx_buf + rx_processed),
+-		   st.pending_length);
+-	dma_start(cfg->dma_dev, cfg->rx_dma_channel);
+-
+-	uart_sam0_notify_rx_processed(dev_data, rx_processed);
++	uart_sam0_notify_rx_processed(dev_data,
++				      dev_data->rx_len - st.pending_length);
+
+ 	k_work_reschedule(&dev_data->rx_timeout_work,
+ 			  K_USEC(dev_data->rx_timeout_chunk));
+@@ -1203,6 +1238,13 @@ static int uart_sam0_rx_disable(const struct device *dev)
+ 	regs->INTENCLR.reg = SERCOM_USART_INTENCLR_RXC;
+ 	dma_stop(cfg->dma_dev, cfg->rx_dma_channel);
+
++	/* Let the controller finish the current beat before reading progress */
++	for (int spin = 0; spin < 64; spin++) {
++		if (dma_get_status(cfg->dma_dev, cfg->rx_dma_channel, &st) != 0 ||
++		    !st.busy) {
++			break;
++		}
++	}
+
+ 	if (dma_get_status(cfg->dma_dev, cfg->rx_dma_channel,
+ 			   &st) == 0 && st.pending_length != 0U &&
+--
+2.53.0
+
+
+From d3c79b2f11cedaf1dec1442a8d33e0053a481af5 Mon Sep 17 00:00:00 2001
+From: Eduardo Contreras <werowero.edy@gmail.com>
+Date: Thu, 3 Sep 2026 14:26:07 -0600
+Subject: [PATCH 3/3] drivers: sam0: cyclic DMA support and gap-free continuous
+ UART RX
+
+- dma_sam0: honor dma_config.cyclic by linking the descriptor to itself
+  and requesting a per-block interrupt, so a channel restarts its block
+  without CPU involvement.
+- uart_sam0 continuous RX: run a cyclic DMA over the single RX buffer,
+  read progress from the write-back descriptor on every tick without
+  pausing the channel, handle the wrap in both the block interrupt and
+  the tick, and refuse to report a progress regression (stale count).
+
+Measured on a SAMD21E17 bridging a CC1352 at 921600 baud with live
+Sniffle traffic: SERCOM overruns went from 50-90 per 30 s (block-restart
+latency) to zero; full-rate (92 KB/s) streams are received intact.
+---
+ drivers/dma/dma_sam0.c     |  10 +++-
+ drivers/serial/uart_sam0.c | 108 ++++++++++++++++++++++++++-----------
+ 2 files changed, 84 insertions(+), 34 deletions(-)
+
+diff --git a/drivers/dma/dma_sam0.c b/drivers/dma/dma_sam0.c
+index 32d400835d5..31f4b3bff02 100644
+--- a/drivers/dma/dma_sam0.c
++++ b/drivers/dma/dma_sam0.c
+@@ -209,9 +209,15 @@ static int dma_sam0_config(const struct device *dev, uint32_t channel,
+ 		goto inval;
+ 	}
+
+-	/* Set up the one and only block */
++	/* Set up the one and only block; a cyclic transfer links the
++	 * descriptor to itself so the channel restarts the block on its own.
++	 */
+ 	desc->BTCNT.reg = block->block_size / config->source_data_size;
+-	desc->DESCADDR.reg = 0;
++	desc->DESCADDR.reg = config->cyclic ? (uint32_t)desc : 0;
++	if (config->cyclic) {
++		/* Linked blocks only interrupt when asked to per block */
++		btctrl.bit.BLOCKACT = DMAC_BTCTRL_BLOCKACT_INT_Val;
++	}
+
+ 	/* Set the automatic source / dest increment */
+ 	switch (block->source_addr_adj) {
+diff --git a/drivers/serial/uart_sam0.c b/drivers/serial/uart_sam0.c
+index 257ccad1334..88a1c033f58 100644
+--- a/drivers/serial/uart_sam0.c
++++ b/drivers/serial/uart_sam0.c
+@@ -202,6 +202,21 @@ static void uart_sam0_notify_rx_processed(struct uart_sam0_dev_data *dev_data,
+ 		return;
+ 	}
+
++	if (processed < dev_data->rx_processed_len) {
++		/* Progress went backwards (stale DMA count): never report a
++		 * negative range, which would deliver old buffer content.
++		 */
++		struct uart_event evt = {
++			.type = UART_RX_STOPPED,
++			.data.rx_stop.reason = UART_ERROR_FRAMING,
++			.data.rx_stop.data.offset = processed,
++			.data.rx_stop.data.len = dev_data->rx_processed_len,
++		};
++
++		dev_data->async_cb(dev_data->dev, &evt, dev_data->async_cb_data);
++		return;
++	}
++
+ 	struct uart_event evt = {
+ 		.type = UART_RX_RDY,
+ 		.data.rx = {
+@@ -237,21 +252,24 @@ static void uart_sam0_dma_rx_done(const struct device *dma_dev, void *arg,
+ 	}
+
+ 	/*
+-	 * Continuous mode: restart on the next buffer before any callback so
+-	 * the gap between blocks is only the interrupt latency. The SERCOM
+-	 * holds two bytes, which is 22 us at 921600 baud.
++	 * Continuous mode: the channel is cyclic over the single buffer and
++	 * has already wrapped on its own; report the tail and start counting
++	 * from the beginning again. No buffer switch, no restart.
+ 	 */
+-	bool restarted = false;
+-
+ 	if (IS_ENABLED(CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS) &&
+-	    dev_data->rx_next_len) {
+-		dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
+-			   (uint32_t)(&(regs->DATA.reg)),
+-			   (uint32_t)dev_data->rx_next_buf, dev_data->rx_next_len);
+-		dma_start(cfg->dma_dev, cfg->rx_dma_channel);
+-		restarted = true;
++	    dev_data->rx_timeout_time != SYS_FOREVER_US) {
++		if (dev_data->rx_processed_len > dev_data->rx_len / 2) {
++			uart_sam0_notify_rx_processed(dev_data, dev_data->rx_len);
++			dev_data->rx_processed_len = 0U;
++		}
++		k_work_reschedule(&dev_data->rx_timeout_work,
++				  K_USEC(dev_data->rx_timeout_chunk));
++		irq_unlock(key);
++		return;
+ 	}
+
++	bool restarted = false;
++
+ 	uart_sam0_notify_rx_processed(dev_data, dev_data->rx_len);
+
+ 	if (dev_data->async_cb) {
+@@ -330,9 +348,8 @@ static void uart_sam0_dma_rx_done(const struct device *dma_dev, void *arg,
+
+ #if CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS
+ /*
+- * Continuous mode: the DMA channel is suspended just long enough to read
+- * its progress (suspend forces the write-back descriptor update) and then
+- * resumed; no reload or restart is needed. Received data is flushed to the
++ * Continuous mode: the DMA channel keeps running; its progress is read from
++ * the write-back descriptor on every tick, no reload or restart is needed. Received data is flushed to the
+  * application every timeout/4 tick. This avoids the byte loss of the
+  * default mode, which stops the DMA on every tick and re-arms it from the
+  * next RXC interrupt (too slow above ~250 kbaud on a SERCOM, which has no
+@@ -353,9 +370,15 @@ static void uart_sam0_rx_timeout(struct k_work *work)
+ 		return;
+ 	}
+
+-	dma_suspend(cfg->dma_dev, cfg->rx_dma_channel);
++	/*
++	 * Read progress without pausing the channel: the controller keeps the
++	 * write-back count current after every beat, so the value is at most
++	 * one byte behind, and the regression guard in
++	 * uart_sam0_notify_rx_processed() protects against a stale read.
++	 * Pausing the channel here would risk a SERCOM overrun, which has only
++	 * one byte time (11 us at 921600 baud) of tolerance.
++	 */
+ 	if (dma_get_status(cfg->dma_dev, cfg->rx_dma_channel, &st) != 0) {
+-		dma_resume(cfg->dma_dev, cfg->rx_dma_channel);
+ 		irq_unlock(key);
+ 		return;
+ 	}
+@@ -384,10 +407,17 @@ static void uart_sam0_rx_timeout(struct k_work *work)
+ 		st.pending_length = dev_data->rx_len;
+ 	}
+
+-	dma_resume(cfg->dma_dev, cfg->rx_dma_channel);
++	size_t processed = dev_data->rx_len - st.pending_length;
+
+-	uart_sam0_notify_rx_processed(dev_data,
+-				      dev_data->rx_len - st.pending_length);
++	if (processed < dev_data->rx_processed_len &&
++	    dev_data->rx_processed_len - processed > dev_data->rx_len / 2) {
++		/* The cyclic channel wrapped and the block interrupt has not
++		 * run yet: deliver the tail, then continue from the start.
++		 */
++		uart_sam0_notify_rx_processed(dev_data, dev_data->rx_len);
++		dev_data->rx_processed_len = 0U;
++	}
++	uart_sam0_notify_rx_processed(dev_data, processed);
+
+ 	k_work_reschedule(&dev_data->rx_timeout_work,
+ 			  K_USEC(dev_data->rx_timeout_chunk));
+@@ -1143,9 +1173,32 @@ static int uart_sam0_rx_enable(const struct device *dev, uint8_t *buf,
+ 		(void)discard;
+ 	}
+
+-	retval = dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
+-			    (uint32_t)(&(regs->DATA.reg)),
+-			    (uint32_t)buf, len);
++	if (IS_ENABLED(CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS) &&
++	    timeout != SYS_FOREVER_US) {
++		/* Cyclic DMA over the buffer: never stops at the block end */
++		struct dma_config dma_cfg = { 0 };
++		struct dma_block_config dma_blk = { 0 };
++
++		dma_cfg.channel_direction = PERIPHERAL_TO_MEMORY;
++		dma_cfg.source_data_size = 1;
++		dma_cfg.dest_data_size = 1;
++		dma_cfg.user_data = dev_data;
++		dma_cfg.dma_callback = uart_sam0_dma_rx_done;
++		dma_cfg.block_count = 1;
++		dma_cfg.head_block = &dma_blk;
++		dma_cfg.dma_slot = cfg->rx_dma_request;
++		dma_cfg.cyclic = 1;
++		dma_blk.block_size = len;
++		dma_blk.source_address = (uint32_t)(&(regs->DATA.reg));
++		dma_blk.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
++		dma_blk.dest_address = (uint32_t)buf;
++		dma_blk.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
++		retval = dma_config(cfg->dma_dev, cfg->rx_dma_channel, &dma_cfg);
++	} else {
++		retval = dma_reload(cfg->dma_dev, cfg->rx_dma_channel,
++				    (uint32_t)(&(regs->DATA.reg)),
++				    (uint32_t)buf, len);
++	}
+ 	if (retval != 0) {
+ 		goto err;
+ 	}
+@@ -1165,16 +1218,7 @@ static int uart_sam0_rx_enable(const struct device *dev, uint8_t *buf,
+ 		k_work_reschedule(&dev_data->rx_timeout_work,
+ 				  K_USEC(dev_data->rx_timeout_chunk));
+
+-		/* Reception started: ask for the next buffer now, as the
+-		 * RXC interrupt path would have done.
+-		 */
+-		if (dev_data->async_cb) {
+-			struct uart_event evt = {
+-				.type = UART_RX_BUF_REQUEST,
+-			};
+-
+-			dev_data->async_cb(dev, &evt, dev_data->async_cb_data);
+-		}
++		/* Cyclic over one buffer: no second buffer is ever needed */
+ 	} else {
+ 		regs->INTENSET.reg = SERCOM_USART_INTENSET_RXC;
+ 	}
+--
+2.53.0

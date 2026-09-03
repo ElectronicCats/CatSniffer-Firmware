@@ -300,8 +300,10 @@ static void cmd_status(char *args)
 
 	char loss_buf[96];
 	snprintf(loss_buf, sizeof(loss_buf),
-		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes\r\n",
-		 catsniffer.uart_overrun_count, catsniffer.ring_overflow_count);
+		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes, "
+		 "dma_regress=%u\r\n",
+		 catsniffer.uart_overrun_count, catsniffer.ring_overflow_count,
+		 catsniffer.dma_regress_count);
 	shell_reply(loss_buf);
 
 	/* SAMD21 only: crash log and stack headroom (16 KB SRAM budget) */
@@ -322,6 +324,7 @@ static void cmd_loss_reset(char *args)
 {
 	catsniffer.uart_overrun_count = 0;
 	catsniffer.ring_overflow_count = 0;
+	catsniffer.dma_regress_count = 0;
 	shell_reply("CC1352 loss counters reset\r\n");
 }
 

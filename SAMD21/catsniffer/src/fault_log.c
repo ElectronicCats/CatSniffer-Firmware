@@ -15,6 +15,7 @@
 
 #define FAULT_LOG_MAGIC 0xFA17106DUL
 #define TRACE_N 24
+#define TRACE_LOG_MAGIC 0x7ACE106DUL
 
 static struct {
 	uint32_t magic;
@@ -51,8 +52,8 @@ void trace_event(uint8_t code)
 {
 	unsigned int key = irq_lock();
 
-	if (trace_log.magic != FAULT_LOG_MAGIC) {
-		trace_log.magic = FAULT_LOG_MAGIC;
+	if (trace_log.magic != TRACE_LOG_MAGIC) {
+		trace_log.magic = TRACE_LOG_MAGIC;
 		trace_log.count = 0;
 	}
 	trace_log.codes[trace_log.count % TRACE_N] = code;
@@ -64,7 +65,7 @@ int trace_format(char *buf, size_t len)
 {
 	int n;
 
-	if (trace_log.magic != FAULT_LOG_MAGIC) {
+	if (trace_log.magic != TRACE_LOG_MAGIC) {
 		return snprintf(buf, len, "Trace: none\r\n");
 	}
 	n = snprintf(buf, len, "Trace(%u):", (unsigned int)trace_log.count);
@@ -80,7 +81,10 @@ int trace_format(char *buf, size_t len)
 
 int fault_log_format(char *buf, size_t len)
 {
-	if (fault_log.magic != FAULT_LOG_MAGIC || fault_log.count == 0) {
+	/* Reason codes are small; anything else is stale RAM from another build
+	 */
+	if (fault_log.magic != FAULT_LOG_MAGIC || fault_log.count == 0 ||
+	    fault_log.reason > 64 || fault_log.count > 100000) {
 		return snprintf(buf, len, "Last fault: none\r\n");
 	}
 	return snprintf(buf, len,

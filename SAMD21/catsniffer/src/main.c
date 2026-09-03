@@ -203,13 +203,13 @@ static int enable_usb_device_next(void)
 //
 // The SAM0 SERCOM has no RX FIFO and at 921600 baud a byte arrives every
 // 11 us, which a per-byte interrupt path cannot sustain on a 48 MHz M0+.
-// The DMA fills alternating chunk buffers; the callback moves each ready
-// chunk into the bridge ring buffer. TX stays interrupt driven.
-#define CC1352_RX_CHUNK 64
+// The fork's continuous mode runs a cyclic DMA over one buffer (no restart
+// at the block end) and reports progress every tick; the callback moves
+// each ready range into the bridge ring buffer. TX stays interrupt driven.
+#define CC1352_RX_BUF 256
 #define CC1352_RX_TIMEOUT_US 4000 /* flush tick = 1 ms (continuous DMA) */
 
-static uint8_t cc1352_rx_bufs[2][CC1352_RX_CHUNK];
-static uint8_t cc1352_rx_next;
+static uint8_t cc1352_rx_buf[CC1352_RX_BUF];
 
 static void cc1352_uart_async_cb(const struct device *dev,
 				 struct uart_event *evt, void *user_data)
@@ -228,24 +228,24 @@ static void cc1352_uart_async_cb(const struct device *dev,
 		break;
 	}
 	case UART_RX_BUF_REQUEST:
-		uart_rx_buf_rsp(dev, cc1352_rx_bufs[cc1352_rx_next],
-				CC1352_RX_CHUNK);
-		cc1352_rx_next ^= 1;
+		/* not used with the cyclic single-buffer mode */
 		break;
 	case UART_RX_STOPPED:
 		trace_event(TR_CB_STOP);
 		if (evt->data.rx_stop.reason & UART_ERROR_OVERRUN) {
 			catsniffer.uart_overrun_count++;
 		}
+		if (evt->data.rx_stop.reason & UART_ERROR_FRAMING) {
+			/* driver reported a DMA progress regression */
+			catsniffer.dma_regress_count++;
+		}
 		break;
 	case UART_RX_DISABLED:
 		trace_event(TR_CB_DIS);
 		/* Restart reception unless a reconfiguration is in progress */
 		if (catsniffer.baud != 0) {
-			cc1352_rx_next = 0;
-			uart_rx_enable(dev, cc1352_rx_bufs[0], CC1352_RX_CHUNK,
+			uart_rx_enable(dev, cc1352_rx_buf, CC1352_RX_BUF,
 				       CC1352_RX_TIMEOUT_US);
-			cc1352_rx_next = 1;
 		}
 		break;
 	default:
@@ -255,8 +255,7 @@ static void cc1352_uart_async_cb(const struct device *dev,
 
 static int cc1352_rx_start(void)
 {
-	cc1352_rx_next = 1;
-	return uart_rx_enable(uart_cc1352, cc1352_rx_bufs[0], CC1352_RX_CHUNK,
+	return uart_rx_enable(uart_cc1352, cc1352_rx_buf, CC1352_RX_BUF,
 			      CC1352_RX_TIMEOUT_US);
 }
 
