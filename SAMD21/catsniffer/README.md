@@ -61,8 +61,8 @@ Requires the same toolchain as the RP2040 firmware: Zephyr SDK 0.17.0, the
 
 The fork must also contain the SAM0 driver changes in
 `SAMD21/zephyr-patches/0001-sam0-uart-dma-continuous-rx.patch`
-(continuous DMA RX mode for `uart_sam0`, DMA write-back seeding in
-`dma_sam0`). Apply with `git am` or `git apply` inside the Zephyr tree if
+(continuous DMA RX mode for `uart_sam0` over a cyclic DMA channel, and
+cyclic/suspend/resume support plus write-back seeding in `dma_sam0`). Apply with `git am` or `git apply` inside the Zephyr tree if
 your checkout does not have them.
 
 ```bash
@@ -92,8 +92,8 @@ Memory report for the production build (2026-09-02):
 
 | Region | Used | Size |
 |---|---|---|
-| FLASH | 79572 B | 120 KB |
-| RAM | 16076 B | 16384 B |
+| FLASH | 80012 B | 120 KB |
+| RAM | 16212 B | 16384 B |
 
 Stack headroom measured with `status` after exercising all commands: main
 168 B unused of 1536, LoRa thread 304 of 1024, ISR 436 of 768. Check these
@@ -128,6 +128,23 @@ Sniffer 1.8.0, on macOS:
 - `band1..3`, `modulation fsk|lora`, `lora_config`, `fsk_config`, `help`
   (45 lines), `identify`, `cc1352_fw_id` all reply.
 - `reboot` re-enters the UF2 bootloader.
+- LoRa and FSK over the air against a CatSniffer v3 (2026-09-03), both
+  directions, `scripts/lora_ota_test.py`: all four transfers received,
+  RSSI -28 to -46 dBm on the bench.
+- CC1352P1 flashed through Cat-Bridge with `cc2538-bsl` at 500000 baud:
+  352 KB backup read (10.5 min, tool-bound) and Sniffle written and CRC
+  verified in 7.5 s, zero UART overruns and zero ring drops in both
+  directions.
+- Sniffle at 921600 streaming into the bridge: zero SERCOM overruns and zero
+  DMA regressions over repeated 30 s runs; a full-rate (92 KB/s) stream was
+  received intact for 30 s.
 
-Not verified: LoRa/FSK over the air against a second radio, and sustained
-921600 baud throughput with a real sniffing session in Wireshark.
+Known limit: when the host does not drain Cat-Bridge fast enough, bytes are
+dropped at the 256 B ring (`ring_dropped` in `status`). On macOS with pyserial
+this was about 2 KB per 30 s of bursty Sniffle traffic. There is no RAM left
+for a larger ring; the RP2040 v3 has 16 KB there.
+
+Notes for Sniffle on v2: use the `sniffle_cc1352p1_cc2652p1_1M.hex` build;
+it talks at 921600 on this board. Flash with the legacy `cc2538-bsl.py`
+after converting the hex to a binary (the tool needs `python-magic` to accept
+hex files).

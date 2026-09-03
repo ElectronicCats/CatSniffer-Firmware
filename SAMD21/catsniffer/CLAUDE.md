@@ -29,8 +29,14 @@ verified on hardware on 2026-09-02 (see README "Verified on hardware").
   `CONFIG_BOOTLOADER_BOSSA_ADAFRUIT_UF2`, output `zephyr.uf2`, drive name
   `SNIFFER`. `cmd_reboot` writes `0xf01669ef` to the top of `sram0` and
   cold-resets.
-- CC1352 UART RX is DMA/async (`cc1352_uart_async_cb` in `main.c`, two
-  64 B chunk buffers, 4 ms timeout); TX stays interrupt driven. This needs
+- CC1352 UART RX is DMA/async (`cc1352_uart_async_cb` in `main.c`, one
+  256 B buffer, 4 ms timeout); TX stays interrupt driven. The fork's
+  continuous mode runs a cyclic DMA over that buffer (self-linked descriptor,
+  never stops at the block end) and reads progress from the write-back
+  descriptor every 1 ms without pausing the channel. The SERCOM buffers only
+  one byte time (11 us at 921600), so never pause the channel and keep
+  interrupt-locked sections short. `status` shows `uart_overrun` (real
+  SERCOM overruns) and `dma_regress` (stale progress reads, should stay 0). This needs
   `CONFIG_UART_SAM0_ASYNC_RX_CONTINUOUS` and `CONFIG_UART_EXCLUSIVE_API_CALLBACKS=n`
   (otherwise registering the async callback erases the TX callback and the
   DRE interrupt storms). The driver mode lives in the fork; the patch is in
@@ -48,7 +54,7 @@ verified on hardware on 2026-09-02 (see README "Verified on hardware").
   thread (`CONFIG_INIT_STACKS`, `CONFIG_THREAD_MONITOR`). Use these before
   guessing about memory problems; there is no SWD console in the default
   build.
-- RAM budget: production build leaves about 300 B unused. Rings: bridge
+- RAM budget: production build leaves about 170 B unused. Rings: bridge
   `CONFIG_CATSNIFFER_BRIDGE_RING_SIZE` (256) per direction, LoRa 264, shell
   128. Stacks: main 1536, LoRa 1024, ISR 768, sysworkq 1024, usbd 1024.
   Check the linker report and `status` stack numbers after any change.

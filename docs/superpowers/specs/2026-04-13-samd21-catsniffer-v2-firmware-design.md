@@ -244,3 +244,23 @@ udc_sam0 512. Measured headroom after exercising every command: main 168,
 LoRa 304, ISR 436 bytes.
 
 Verification results are recorded in `SAMD21/catsniffer/README.md`.
+
+### Bridge reliability follow-up (2026-09-03)
+
+Driving the CC1352 bootloader through Cat-Bridge at 500 kbaud lost about one
+byte per 6000 with the first continuous-mode driver (stop/reload/restart
+per tick, stale write-back, restart after callbacks). The driver now reads
+progress under DMA suspend/resume, restarts on the next buffer before any
+callback at block completion, and reports SERCOM overruns from the tick.
+Result: 0 failures over 3000 bootloader transactions, `uart_overrun=0`.
+Chunk buffers are 128 B (RAM 16204 B used, 180 B free).
+
+Second pass with live Sniffle traffic at 921600 (same day): the
+stop/reload/restart tick and even suspend/resume still produced SERCOM
+overruns at 3-6% of block boundaries, because the restart depends on
+interrupt latency and the SERCOM tolerates only 11 us. Final design: cyclic
+DMA over one 256 B buffer (self-linked descriptor with per-block interrupt),
+progress read every tick without pausing the channel, wrap handled in both
+the block interrupt and the tick, and a guard that refuses to report
+backwards progress. Result: zero overruns and zero regressions on live and
+full-rate streams; remaining loss is host-side ring drops during bursts.
