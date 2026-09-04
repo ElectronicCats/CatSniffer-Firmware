@@ -49,7 +49,8 @@ validate_firmware_version() {
         echo "ERROR: Version validator is missing or not executable: $VERSION_VALIDATOR"
         exit 1
     fi
-    "$VERSION_VALIDATOR" "$version" >/dev/null
+    # SAMD21 (CatSniffer v1/v2) releases use board family 2: v2.X.Y.Z
+    "$VERSION_VALIDATOR" "$version" --require-board 2 >/dev/null
 }
 
 # Parse long flags first
