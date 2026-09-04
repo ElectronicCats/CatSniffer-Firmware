@@ -5,7 +5,7 @@ manifest:
   projects:
     - name: zephyr
       remote: wero1414
-      revision: fsk-native-driver
+      revision: sx1262-rssi
       import: true
   self:
     path: SAMD21/catsniffer
