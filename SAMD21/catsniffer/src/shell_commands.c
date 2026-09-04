@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <zephyr/kernel.h>
-#include <pico/bootrom.h>
+#include <zephyr/sys/reboot.h>
 
 #include "catsniffer.h"
 #include "fw_metadata.h"
@@ -133,7 +133,7 @@ static const shell_cmd_t commands[] = {
 	{ "band1", cmd_band1, "2.4GHz band", false },
 	{ "band2", cmd_band2, "SUB-GHz band", false },
 	{ "band3", cmd_band3, "LoRa band", false },
-	{ "reboot", cmd_reboot, "RP2040 USB bootloader", false },
+	{ "reboot", cmd_reboot, "Enter SAMD21 UF2 bootloader", false },
 	{ "status", cmd_status, "Device status", false },
 	{ "loss_reset", cmd_loss_reset, "Reset CC1352 loss counters", false },
 	{ "fw_version", cmd_fw_version, "Show firmware build version", false },
@@ -225,16 +225,54 @@ static void cmd_band3(char *args)
 	shell_reply("LoRa Band\r\n");
 }
 
+#define UF2_DOUBLE_TAP_MAGIC 0xf01669efUL
+
 static void cmd_reboot(char *args)
 {
-	shell_reply("Entering USB bootloader...\r\n");
+	uint32_t *sram_top = (uint32_t *)(DT_REG_ADDR(DT_NODELABEL(sram0)) +
+					  DT_REG_SIZE(DT_NODELABEL(sram0)));
+
+	shell_reply("Entering UF2 bootloader...\r\n");
 	k_msleep(100);
-	reset_usb_boot(0, 0);
+	/* uf2-samdx1 checks this word after reset and stays in bootloader */
+	sram_top[-1] = UF2_DOUBLE_TAP_MAGIC;
+	sys_reboot(SYS_REBOOT_COLD);
+}
+
+/* ISR stack headroom: count the untouched 0xAA fill left by CONFIG_INIT_STACKS
+ */
+K_KERNEL_STACK_ARRAY_DECLARE(z_interrupt_stacks, CONFIG_MP_MAX_NUM_CPUS,
+			     CONFIG_ISR_STACK_SIZE);
+static size_t isr_stack_unused(void)
+{
+	const uint8_t *p =
+		(const uint8_t *)K_KERNEL_STACK_BUFFER(z_interrupt_stacks[0]);
+	size_t n = 0;
+
+	while (n < K_KERNEL_STACK_SIZEOF(z_interrupt_stacks[0]) &&
+	       p[n] == 0xAA) {
+		n++;
+	}
+	return n;
+}
+
+static void stack_report_cb(const struct k_thread *t, void *user_data)
+{
+	char *buf = user_data;
+	size_t unused = 0;
+
+	k_thread_stack_space_get(t, &unused);
+	snprintf(buf, 96, "  thread %p prio=%d stack=%u unused=%u\r\n", t,
+		 t->base.prio, (unsigned int)t->stack_info.size,
+		 (unsigned int)unused);
+	shell_reply(buf);
 }
 
 static void cmd_status(char *args)
 {
-	char buf[320];
+	char buf[256];
+	trace_format(buf, sizeof(buf));
+	shell_reply(buf);
 	const char *mode_str = (catsniffer.lora_mode == LORA_MODE_STREAM) ?
 				       "Stream" :
 				       "Command";
@@ -262,15 +300,31 @@ static void cmd_status(char *args)
 
 	char loss_buf[96];
 	snprintf(loss_buf, sizeof(loss_buf),
-		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes\r\n",
-		 catsniffer.uart_overrun_count, catsniffer.ring_overflow_count);
+		 "CC1352 loss: uart_overrun=%u, ring_dropped=%u bytes, "
+		 "dma_regress=%u\r\n",
+		 catsniffer.uart_overrun_count, catsniffer.ring_overflow_count,
+		 catsniffer.dma_regress_count);
 	shell_reply(loss_buf);
+
+	/* SAMD21 only: crash log and stack headroom (16 KB SRAM budget) */
+	size_t main_unused = 0, lora_unused = 0;
+	k_thread_stack_space_get(k_current_get(), &main_unused);
+	k_thread_stack_space_get(&lora_thread, &lora_unused);
+	snprintf(loss_buf, sizeof(loss_buf),
+		 "Stack unused: main=%u lora=%u isr=%u bytes\r\n",
+		 (unsigned int)main_unused, (unsigned int)lora_unused,
+		 (unsigned int)isr_stack_unused());
+	shell_reply(loss_buf);
+	fault_log_format(loss_buf, sizeof(loss_buf));
+	shell_reply(loss_buf);
+	k_thread_foreach(stack_report_cb, loss_buf);
 }
 
 static void cmd_loss_reset(char *args)
 {
 	catsniffer.uart_overrun_count = 0;
 	catsniffer.ring_overflow_count = 0;
+	catsniffer.dma_regress_count = 0;
 	shell_reply("CC1352 loss counters reset\r\n");
 }
 
@@ -283,7 +337,7 @@ static void cmd_fw_version(char *args)
 		 CATSNIFFER_FW_VERSION, CATSNIFFER_GIT_SHA,
 		 CATSNIFFER_GIT_DIRTY, CATSNIFFER_BUILD_TIME_UTC,
 		 CATSNIFFER_COMPILER_ID, CATSNIFFER_COMPILER_VERSION,
-		 "v3 RP2040 CC1352P7");
+		 "v2 SAMD21 CC1352P1");
 	shell_reply(buf);
 }
 
@@ -363,7 +417,8 @@ static void cmd_cc1352_fw_id(char *args)
 				shell_reply("ERR invalid ID (allowed: a-z A-Z "
 					    "0-9 _ - . , max 31)\r\n");
 			} else {
-				shell_reply("ERR storage unavailable\r\n");
+				shell_reply("ERR not supported on this "
+					    "board\r\n");
 			}
 			return;
 		}
@@ -386,7 +441,7 @@ static void cmd_cc1352_fw_id(char *args)
 			return;
 		}
 		if (ret < 0) {
-			shell_reply("ERR storage unavailable\r\n");
+			shell_reply("ERR not supported on this board\r\n");
 			return;
 		}
 
@@ -403,7 +458,7 @@ static void cmd_cc1352_fw_id(char *args)
 	if (strcmp(subcmd, "clear") == 0) {
 		int ret = fw_metadata_clear_cc1352_fw_id();
 		if (ret < 0) {
-			shell_reply("ERR storage unavailable\r\n");
+			shell_reply("ERR not supported on this board\r\n");
 			return;
 		}
 		shell_reply("OK cc1352_fw_id cleared\r\n");

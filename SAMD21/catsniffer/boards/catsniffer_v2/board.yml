@@ -1,0 +1,6 @@
+board:
+  name: catsniffer_v2
+  full_name: CatSniffer v2 (SAMD21)
+  vendor: electroniccats
+  socs:
+    - name: samd21e17a
