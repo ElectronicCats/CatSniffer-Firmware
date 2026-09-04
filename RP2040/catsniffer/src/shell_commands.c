@@ -278,10 +278,12 @@ static void cmd_fw_version(char *args)
 {
 	char buf[320];
 	snprintf(buf, sizeof(buf),
-		 "FW: %s\r\nGit: %s (%s)\r\nBuilt: %s\r\nCompiler: %s %s\r\n",
+		 "FW: %s\r\nGit: %s (%s)\r\nBuilt: %s\r\nCompiler: %s %s\r\n"
+		 "Board: %s\r\n",
 		 CATSNIFFER_FW_VERSION, CATSNIFFER_GIT_SHA,
 		 CATSNIFFER_GIT_DIRTY, CATSNIFFER_BUILD_TIME_UTC,
-		 CATSNIFFER_COMPILER_ID, CATSNIFFER_COMPILER_VERSION);
+		 CATSNIFFER_COMPILER_ID, CATSNIFFER_COMPILER_VERSION,
+		 "v3 RP2040 CC1352P7");
 	shell_reply(buf);
 }
 
