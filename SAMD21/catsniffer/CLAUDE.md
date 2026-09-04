@@ -63,6 +63,17 @@ verified on hardware on 2026-09-02 (see README "Verified on hardware").
 - `debug.conf` cannot enable full logging (does not fit). It gives a printk
   console over Segger RTT and shrinks the bridge buffers.
 
+## Manifests and CI
+
+- `west.yml` and `west-ci.yml` point at the fork branch `sx1262-rssi` (the
+  RP2040 tree still names `fsk-native-driver`). CI job `build-samd21` in
+  `.github/workflows/firmware-ci.yml` uses `west-ci.yml` (zephyr, hal_atmel,
+  cmsis, cmsis_6, loramac-node at the fork's pinned revisions). When the
+  fork's west.yml bumps a module, update the revisions here too.
+- Releases: tag `v2.X.Y.Z` builds this board only and publishes
+  `catsniffer-v2.X.Y.Z.uf2`; tag `v3.X.Y.Z` builds the RP2040. The first
+  digit is the board family (`scripts/validate_fw_version.sh --require-board 2`).
+
 ## Build
 
 The `SAMD21/` directory may not be a complete west workspace. Build from

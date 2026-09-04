@@ -83,6 +83,11 @@ bash scripts/catsniffer_build_flash_test.sh -f --all # flash every UF2 drive
 west build -p always -s ... -d .../build-debug -b catsniffer_v2 -- -DEXTRA_CONF_FILE=debug.conf
 ```
 
+CI builds this firmware on every push and pull request (`firmware-ci.yml`,
+job `build-samd21`) from `west-ci.yml`, a minimal manifest pinned to the fork
+branch `sx1262-rssi` that carries the SAM0 driver changes. Tags `v2.X.Y.Z`
+publish a release with `catsniffer-v2.X.Y.Z.uf2` (`firmware-release.yml`).
+
 Alternatively initialize a dedicated workspace once with
 `west init -l SAMD21/catsniffer --mf west.yml && west update` from the repo
 root, after which plain `west build -b catsniffer_v2` works from this
