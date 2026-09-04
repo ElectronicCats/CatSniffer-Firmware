@@ -1,0 +1,12 @@
+# Copyright (c) 2026 Electronic Cats
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_CATSNIFFER_V2
+
+config BOARD
+	default "catsniffer_v2"
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 48000000
+
+endif # BOARD_CATSNIFFER_V2

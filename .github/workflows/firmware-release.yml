@@ -1,5 +1,10 @@
 name: Firmware Release
 
+# Release tags encode the board family in the first number:
+#   v3.X.Y.Z -> CatSniffer v3.x (RP2040 + CC1352P7): RP2040 UF2 + CC1352P7 HEX files
+#   v2.X.Y.Z -> CatSniffer v1.x/v2.x (SAMD21 + CC1352P1): SAMD21 UF2 only
+# Host tools (catnip) look up the latest release per family by this prefix.
+
 on:
   push:
     tags:
@@ -7,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Tag name to publish (example: v3.1.0.0)"
+        description: "Tag name to publish (example: v3.1.0.0 or v2.0.1.0)"
         required: true
         type: string
 
@@ -24,7 +29,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve release version
+      - name: Resolve release version and board family
         id: version
         shell: bash
         run: |
@@ -34,8 +39,34 @@ jobs:
           else
             rel="${GITHUB_REF_NAME}"
           fi
+          if [[ "${rel}" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            family="${BASH_REMATCH[1]}"
+          else
+            echo "ERROR: release tag '${rel}' is not vA.X.Y.Z"
+            exit 1
+          fi
+          case "${family}" in
+            3)
+              app_dir="RP2040"
+              board="rpi_pico"
+              bash RP2040/catsniffer/scripts/validate_fw_version.sh "${rel}" --require-board 3 --min-version v3.1.0.0
+              ;;
+            2)
+              app_dir="SAMD21"
+              board="catsniffer_v2"
+              bash SAMD21/catsniffer/scripts/validate_fw_version.sh "${rel}" --require-board 2
+              ;;
+            *)
+              echo "ERROR: unknown board family ${family} in tag ${rel}"
+              exit 1
+              ;;
+          esac
           echo "release_tag=${rel}" >> "${GITHUB_OUTPUT}"
+          echo "family=${family}" >> "${GITHUB_OUTPUT}"
+          echo "app_dir=${app_dir}" >> "${GITHUB_OUTPUT}"
+          echo "board=${board}" >> "${GITHUB_OUTPUT}"
           echo "CATSNIFFER_FW_VERSION=${rel}" >> "${GITHUB_ENV}"
+          echo "Release ${rel}: family v${family}, app ${app_dir}, board ${board}"
 
       - name: Install system dependencies
         run: sudo apt-get install -y ninja-build cmake device-tree-compiler gperf
@@ -58,34 +89,32 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           pip install west jsonschema pyelftools PyYAML
-          west init -l RP2040/catsniffer --mf west-ci.yml
-          cd "${GITHUB_WORKSPACE}/RP2040"
+          west init -l "${{ steps.version.outputs.app_dir }}/catsniffer" --mf west-ci.yml
+          cd "${GITHUB_WORKSPACE}/${{ steps.version.outputs.app_dir }}"
           west update
 
-      - name: Build release firmware (RP2040)
+      - name: Build release firmware
         shell: bash
         run: |
           set -euo pipefail
-          export ZEPHYR_BASE="${GITHUB_WORKSPACE}/RP2040/zephyr"
+          app_dir="${{ steps.version.outputs.app_dir }}"
+          board="${{ steps.version.outputs.board }}"
+          export ZEPHYR_BASE="${GITHUB_WORKSPACE}/${app_dir}/zephyr"
           export ZEPHYR_SDK_INSTALL_DIR="${HOME}/zephyr-sdk-0.16.8"
-          cd "${GITHUB_WORKSPACE}/RP2040"
+          cd "${GITHUB_WORKSPACE}/${app_dir}"
           west build -s catsniffer \
-            -b rpi_pico \
-            -d "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico" -- \
-            -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/RP2040/catsniffer/.cache/zephyr" \
+            -b "${board}" \
+            -d "${GITHUB_WORKSPACE}/${app_dir}/catsniffer/build/${board}" -- \
+            -DUSER_CACHE_DIR="${GITHUB_WORKSPACE}/${app_dir}/catsniffer/.cache/zephyr" \
             -DCATSNIFFER_FW_VERSION="${CATSNIFFER_FW_VERSION}"
 
-      - name: Collect CC1352 HEX assets
+      - name: Collect CC1352P7 HEX assets (v3 family only)
+        if: steps.version.outputs.family == '3'
         shell: bash
         run: |
           set -euo pipefail
           cd "${GITHUB_WORKSPACE}"
           python3 tools/get_hex_files.py
-
-      - name: Filter unsupported CC1352 example HEX files
-        shell: bash
-        run: |
-          set -euo pipefail
           if [[ -d "${GITHUB_WORKSPACE}/tmp" ]]; then
             find "${GITHUB_WORKSPACE}/tmp" -type f \( -iname "simple_central*.hex" -o -iname "simple_peripheral*.hex" \) -delete
           fi
@@ -94,10 +123,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          app_dir="${{ steps.version.outputs.app_dir }}"
+          board="${{ steps.version.outputs.board }}"
+          rel="${{ steps.version.outputs.release_tag }}"
           mkdir -p "${GITHUB_WORKSPACE}/release-assets"
 
-          cp "${GITHUB_WORKSPACE}/RP2040/catsniffer/build/rpi_pico/zephyr/zephyr.uf2" \
-             "${GITHUB_WORKSPACE}/release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.uf2"
+          # Asset name carries the family prefix through the tag: catsniffer-v3.1.0.0.uf2 / catsniffer-v2.0.1.0.uf2
+          cp "${GITHUB_WORKSPACE}/${app_dir}/catsniffer/build/${board}/zephyr/zephyr.uf2" \
+             "${GITHUB_WORKSPACE}/release-assets/catsniffer-${rel}.uf2"
 
           if [[ -f "${GITHUB_WORKSPACE}/board_release.json" ]]; then
             cp "${GITHUB_WORKSPACE}/board_release.json" "${GITHUB_WORKSPACE}/release-assets/board_release.json"
@@ -107,8 +140,11 @@ jobs:
             cp "${GITHUB_WORKSPACE}/tmp/"*.hex "${GITHUB_WORKSPACE}/release-assets/" || true
           fi
 
+          # v2 releases ship no CC1352 images: Sniffle for the CC1352P1 is
+          # taken from the nccgroup release by the host tools.
           sha256sum "${GITHUB_WORKSPACE}/release-assets/"* > \
             "${GITHUB_WORKSPACE}/release-assets/SHA256SUMS.txt"
+          ls -la "${GITHUB_WORKSPACE}/release-assets"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -117,10 +153,7 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            release-assets/catsniffer-${{ steps.version.outputs.release_tag }}.uf2
-            release-assets/board_release.json
-            release-assets/*.hex
-            release-assets/SHA256SUMS.txt
+            release-assets/*
 
       - name: Cleanup temporary files
         if: always()
