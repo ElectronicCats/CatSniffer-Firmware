@@ -830,17 +830,20 @@ static void AirtagScanner_processAppMsg(scEvt_t *pMsg)
 				    pAdvRpt->pData[6] == 0x10) {
 					Display_printf(dispHandle, 0, 0,
 						       "Airtag detected! -> %s "
-						       "Status: Registered and "
-						       "active",
+						       "RSSI:%d Status: "
+						       "Registered and active",
 						       Util_convertBdAddr2Str(
-							       pAdvRpt->addr));
+							       pAdvRpt->addr),
+						       pAdvRpt->rssi);
 				} else if (pAdvRpt->pData[4] == 0x07 &&
 					   pAdvRpt->pData[6] == 0x05) {
 					Display_printf(dispHandle, 0, 0,
 						       "Airtag detected! -> %s "
-						       "Status: Unregistered",
+						       "RSSI:%d Status: "
+						       "Unregistered",
 						       Util_convertBdAddr2Str(
-							       pAdvRpt->addr));
+							       pAdvRpt->addr),
+						       pAdvRpt->rssi);
 				}
 			}
 			ICall_free(pAdvRpt->pData);
