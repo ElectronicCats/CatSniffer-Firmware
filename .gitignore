@@ -4,3 +4,15 @@
 build*
 build/*
 .vscode
+
+# west workspace clones next to the SAMD21 application
+SAMD21/zephyr/
+SAMD21/modules/
+SAMD21/bootloader/
+SAMD21/tools/
+SAMD21/.west/
+.cache/
+
+# Salidas y rutas locales del build de CC1352P7 en Linux
+CC1352P7/linux-build/out/
+CC1352P7/linux-build/paths.local.mk
