@@ -291,6 +291,24 @@ static GAP_Addr_Modes_t addrMode = DEFAULT_ADDRESS_MODE;
 // Current Random Private Address
 static uint8 rpa[B_ADDR_LEN] = { 0 };
 
+// ---------------------------------------------------------------------------
+// Find My beacon identity
+// ---------------------------------------------------------------------------
+// First 6 bytes of the EC-P224 public key this beacon impersonates, in natural
+// (big-endian) order, exactly as exported by OpenHaystack. These bytes are NOT
+// carried in the advertisement: a nearby iPhone rebuilds the full public key
+// from the advertising MAC address, so the BLE static random address MUST be
+// derived from them. They belong to the SAME key whose bytes [6..27] are
+// embedded in airtag_adv_data (see AirtagSpoofer_processGapMessage).
+//
+// Replace with the first 6 bytes of your own public key. Their top two bits
+// must match the advertisement's key-bits byte (airtag_adv_data[29] == 0x01).
+static const uint8 airtagPubKeyHead[B_ADDR_LEN] = { 0x00, 0x00, 0x00,
+						    0x00, 0x00, 0x00 };
+
+// BLE static random address derived from airtagPubKeyHead at init time.
+static uint8 airtagRandomAddr[B_ADDR_LEN] = { 0 };
+
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -513,13 +531,46 @@ static void AirtagSpoofer_init(void)
 	// Initialize Connection List
 	AirtagSpoofer_clearConnListEntry(LINKDB_CONNHANDLE_ALL);
 
+	// Default to the stack's configured address so the beacon always
+	// advertises and stays visible to scanners.
+	uint8 *pDevRandAddr = (uint8 *)&pRandomAddress;
+
+	// Detection (Samsung/BLE scanners, iOS tracking alerts) depends only on
+	// the advertised payload, which is unchanged. The BLE static random
+	// address only matters for an END-TO-END spoof: a nearby iPhone
+	// rebuilds the full public key from MAC bytes [0..5] + advertised bytes
+	// [6..27], so uploaded Find My reports are only retrievable when the
+	// MAC is derived from the same key. That derivation is applied ONLY
+	// when a key head is configured (non-zero); otherwise we keep the
+	// default address so a build with the placeholder key still works
+	// exactly like before.
+	bool keyConfigured = (airtagPubKeyHead[0] | airtagPubKeyHead[1] |
+			      airtagPubKeyHead[2] | airtagPubKeyHead[3] |
+			      airtagPubKeyHead[4] | airtagPubKeyHead[5]) != 0;
+
+	if (keyConfigured) {
+		// TI stores addresses little-endian (index 0 = LSB); the two
+		// most-significant bits of a static random address must be
+		// 0b11, so the key's first byte is OR'ed with 0xC0 in the MSB
+		// position.
+		airtagRandomAddr[0] = airtagPubKeyHead[5];
+		airtagRandomAddr[1] = airtagPubKeyHead[4];
+		airtagRandomAddr[2] = airtagPubKeyHead[3];
+		airtagRandomAddr[3] = airtagPubKeyHead[2];
+		airtagRandomAddr[4] = airtagPubKeyHead[1];
+		airtagRandomAddr[5] = airtagPubKeyHead[0] | 0xC0;
+
+		addrMode = ADDRMODE_RANDOM;
+		pDevRandAddr = airtagRandomAddr;
+	}
+
 	BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 			 "APP : ---- call GAP_DeviceInit",
 			 GAP_PROFILE_PERIPHERAL);
 	// Initialize GAP layer for Peripheral role and register to receive GAP
 	// events
 	GAP_DeviceInit(GAP_PROFILE_PERIPHERAL, selfEntity, addrMode,
-		       &pRandomAddress);
+		       pDevRandAddr);
 
 	// Initialize array to store connection handle and RSSI values
 	AirtagSpoofer_initPHYRSSIArray();
