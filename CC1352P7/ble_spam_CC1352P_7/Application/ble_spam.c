@@ -48,6 +48,7 @@
  * INCLUDES
  */
 #include <string.h>
+#include <stdarg.h>
 
 #include <ti/sysbios/knl/Task.h>
 #include <ti/sysbios/knl/Clock.h>
@@ -55,6 +56,8 @@
 #include <ti/sysbios/knl/Queue.h>
 
 #include <ti/display/Display.h>
+#include <ti/drivers/UART2.h>
+#include <ti/drivers/dpl/SystemP.h>
 
 #if (!(defined __TI_COMPILER_VERSION__) && !(defined __GNUC__))
 #include <intrinsics.h>
@@ -134,6 +137,7 @@
 #define SPAM_CONN_EVT 8
 
 #define SPAM_CYCLE_EVT 9
+#define SPAM_UART_CMD_EVT 10
 
 // Internal Events for RTOS application
 #define SPAM_ICALL_EVT ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -234,8 +238,19 @@ typedef struct {
  * GLOBAL VARIABLES
  */
 
-// Display Interface
+// Kept as a NULL handle only so the stack AssertHandler in Startup/main.c
+// links. Normal status output goes over UART2 (BleSpam_log); in an assert
+// its Display_open() fails gracefully because UART2 already owns the port.
 Display_Handle dispHandle = NULL;
+
+// Console UART: status output plus single-line command input. The
+// CatSniffer v3 has no user buttons, so the run mode is driven over UART.
+#define SPAM_CMD_MAXLEN 24
+static UART2_Handle uartHandle = NULL;
+static uint8_t spamRxByte;
+static char spamCmdBuf[SPAM_CMD_MAXLEN];
+static volatile uint8_t spamCmdLen = 0;
+static volatile uint8_t spamCmdReady = 0;
 
 // Task configuration
 Task_Struct spamTask;
@@ -246,13 +261,14 @@ Task_Struct spamTask;
 #endif
 uint8_t spamTaskStack[SPAM_TASK_STACK_SIZE];
 
-#define APP_EVT_EVENT_MAX 0x9
+#define APP_EVT_EVENT_MAX 0xA
 char *appEventStrings[] = {
 	"APP_STATE_CHANGE_EVT     ", "APP_CHAR_CHANGE_EVT      ",
 	"APP_KEY_CHANGE_EVT       ", "APP_ADV_EVT              ",
 	"APP_PAIR_STATE_EVT       ", "APP_PASSCODE_EVT         ",
 	"APP_PERIODIC_EVT         ", "APP_SEND_PARAM_UPDATE_EVT",
 	"APP_CONN_EVT             ", "APP_SPAM_CYCLE_EVT       ",
+	"APP_UART_CMD_EVT         ",
 };
 
 /*********************************************************************
@@ -360,6 +376,10 @@ static void BleSpam_rotateAddress(void);
 static uint32_t BleSpam_addrRand(void);
 static void BleSpam_logErr(const char *what, bStatus_t status);
 static void BleSpam_logAddr(const char *tag, const uint8_t *addr);
+static void BleSpam_log(const char *fmt, ...);
+static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
+			       void *userArg, int_fast16_t status);
+static void BleSpam_handleCommand(const char *cmd);
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -419,14 +439,13 @@ void BleSpam_start(bt_spam_mode_t mode)
 	spamActiveIdx = 0;
 	spamCycleCount = 0;
 
-	Display_printf(dispHandle, 0, 0,
-		       "SPAM: start mode=%s models=%u int=20-30ms",
-		       spam_models_mode_name(spamMode),
-		       (unsigned)spam_models_count());
+	BleSpam_log("SPAM: start mode=%s models=%u int=20-30ms",
+		    spam_models_mode_name(spamMode),
+		    (unsigned)spam_models_count());
 
 	spam_models_prepare(spamActiveIdx, &spamCurModel);
-	Display_printf(dispHandle, 0, 0, "SPAM: model %s (1/%u)",
-		       spamCurModel.name, (unsigned)spam_models_count());
+	BleSpam_log("SPAM: model %s (1/%u)", spamCurModel.name,
+		    (unsigned)spam_models_count());
 	BleSpam_logAddr("SPAM: addr", spamAddr);
 
 	if (!spamAdvReady) {
@@ -489,7 +508,7 @@ bool BleSpam_is_running(void)
  */
 static void BleSpam_logErr(const char *what, bStatus_t status)
 {
-	Display_printf(dispHandle, 0, 0, "ERR: %s %d", what, (int)status);
+	BleSpam_log("ERR: %s %d", what, (int)status);
 }
 
 /*********************************************************************
@@ -504,10 +523,152 @@ static void BleSpam_logErr(const char *what, bStatus_t status)
  */
 static void BleSpam_logAddr(const char *tag, const uint8_t *addr)
 {
-	Display_printf(dispHandle, 0, 0, "%s %02x:%02x:%02x:%02x:%02x:%02x",
-		       tag, (unsigned)addr[5], (unsigned)addr[4],
-		       (unsigned)addr[3], (unsigned)addr[2], (unsigned)addr[1],
-		       (unsigned)addr[0]);
+	BleSpam_log("%s %02x:%02x:%02x:%02x:%02x:%02x", tag, (unsigned)addr[5],
+		    (unsigned)addr[4], (unsigned)addr[3], (unsigned)addr[2],
+		    (unsigned)addr[1], (unsigned)addr[0]);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_log
+ *
+ * @brief   Formatted status line over the console UART. Appends CRLF,
+ *          matching the one-line-per-call behaviour of Display_printf.
+ *          Called from task context only (blocking UART writes).
+ *
+ * @param   fmt - printf-style format string
+ *
+ * @return  None.
+ */
+static void BleSpam_log(const char *fmt, ...)
+{
+	char buf[132];
+	va_list ap;
+	int n;
+
+	if (uartHandle == NULL) {
+		return;
+	}
+
+	va_start(ap, fmt);
+	n = SystemP_vsnprintf(buf, sizeof(buf) - 2, fmt, ap);
+	va_end(ap);
+
+	if (n < 0) {
+		return;
+	}
+	if (n > (int)(sizeof(buf) - 2)) {
+		n = (int)(sizeof(buf) - 2);
+	}
+	buf[n++] = '\r';
+	buf[n++] = '\n';
+
+	UART2_write(uartHandle, buf, (size_t)n, NULL);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_uartReadCb
+ *
+ * @brief   UART RX callback (may run in HWI/SWI context). Assembles one
+ *          command line; on CR/LF it hands the line to the task via
+ *          SPAM_UART_CMD_EVT. Bytes are dropped while a completed command
+ *          is still pending, and the next single-byte read is re-armed.
+ *
+ * @return  None.
+ */
+static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
+			       void *userArg, int_fast16_t status)
+{
+	(void)handle;
+	(void)buf;
+	(void)userArg;
+
+	if ((status == UART2_STATUS_SUCCESS) && (count > 0)) {
+		char c = (char)spamRxByte;
+
+		if ((c == '\n') || (c == '\r')) {
+			if (!spamCmdReady && (spamCmdLen > 0)) {
+				spamCmdBuf[spamCmdLen] = '\0';
+				spamCmdReady = 1;
+				BleSpam_enqueueMsg(SPAM_UART_CMD_EVT, NULL);
+			}
+			spamCmdLen = 0;
+		} else if (!spamCmdReady &&
+			   (spamCmdLen < (SPAM_CMD_MAXLEN - 1))) {
+			spamCmdBuf[spamCmdLen++] = c;
+		}
+	}
+
+	// Re-arm the next single-byte read to keep receiving.
+	if (uartHandle != NULL) {
+		UART2_read(uartHandle, &spamRxByte, 1, NULL);
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_handleCommand
+ *
+ * @brief   Parse and act on a completed UART command line (task context).
+ *          Replaces the button UX the CatSniffer v3 hardware cannot offer.
+ *          Modes: all/apple/android/windows/samsung (or a/p/n/w/s).
+ *          Control: start (r), stop (x), status (st), help (?).
+ *
+ * @param   cmd - NUL-terminated command word
+ *
+ * @return  None.
+ */
+static void BleSpam_handleCommand(const char *cmd)
+{
+	bt_spam_mode_t mode;
+	bool haveMode = true;
+
+	if ((strcmp(cmd, "all") == 0) || (strcmp(cmd, "a") == 0)) {
+		mode = BT_SPAM_MODE_ALL;
+	} else if ((strcmp(cmd, "apple") == 0) || (strcmp(cmd, "p") == 0)) {
+		mode = BT_SPAM_MODE_APPLE;
+	} else if ((strcmp(cmd, "android") == 0) || (strcmp(cmd, "n") == 0)) {
+		mode = BT_SPAM_MODE_ANDROID;
+	} else if ((strcmp(cmd, "windows") == 0) || (strcmp(cmd, "w") == 0)) {
+		mode = BT_SPAM_MODE_WINDOWS;
+	} else if ((strcmp(cmd, "samsung") == 0) || (strcmp(cmd, "s") == 0)) {
+		mode = BT_SPAM_MODE_SAMSUNG;
+	} else {
+		haveMode = false;
+	}
+
+	if (haveMode) {
+		if (BleSpam_is_running()) {
+			// Restart the cycle on the new mode's model list
+			BleSpam_start(mode);
+		} else {
+			spamMode = mode;
+			spam_models_rebuild_active(spamMode);
+			BleSpam_log("SPAM: mode -> %s (stopped)",
+				    spam_models_mode_name(spamMode));
+		}
+		return;
+	}
+
+	if ((strcmp(cmd, "stop") == 0) || (strcmp(cmd, "x") == 0)) {
+		BleSpam_stop();
+		BleSpam_log("SPAM: stopped");
+	} else if ((strcmp(cmd, "start") == 0) || (strcmp(cmd, "run") == 0) ||
+		   (strcmp(cmd, "r") == 0)) {
+		if (BleSpam_is_running()) {
+			BleSpam_log("SPAM: already running");
+		} else {
+			BleSpam_start(spamMode);
+		}
+	} else if ((strcmp(cmd, "status") == 0) || (strcmp(cmd, "st") == 0)) {
+		BleSpam_log("SPAM: mode=%s running=%u models=%u",
+			    spam_models_mode_name(spamMode),
+			    (unsigned)BleSpam_is_running(),
+			    (unsigned)spam_models_count());
+	} else if ((strcmp(cmd, "help") == 0) || (strcmp(cmd, "?") == 0)) {
+		BleSpam_log("SPAM cmds: all|apple|android|windows|samsung, "
+			    "start, stop, status");
+	} else {
+		BleSpam_log("ERR: unknown cmd '%s' (type help)", cmd);
+	}
 }
 
 /*********************************************************************
@@ -709,13 +870,12 @@ static void BleSpam_processSpamCycle(void)
 	BleSpam_swapPayload(&spamCurModel, rotateAddr);
 	Util_startClock(&clkSpamCycle);
 
-	Display_printf(dispHandle, 0, 0, "SPAM: %s (%u/%u)", spamCurModel.name,
-		       (unsigned)(spamActiveIdx + 1),
-		       (unsigned)spam_models_count());
+	BleSpam_log("SPAM: %s (%u/%u)", spamCurModel.name,
+		    (unsigned)(spamActiveIdx + 1),
+		    (unsigned)spam_models_count());
 
 	if ((spamCycleCount % SPAM_STATS_CYCLES) == 0) {
-		Display_printf(dispHandle, 0, 0, "SPAM: cycles=%u",
-			       (unsigned)spamCycleCount);
+		BleSpam_log("SPAM: cycles=%u", (unsigned)spamCycleCount);
 	}
 }
 
@@ -880,19 +1040,36 @@ static void BleSpam_init(void)
 	// Initialize array to store connection handle and RSSI values
 	BleSpam_initPHYRSSIArray();
 
-	// The type of display is configured based on the BOARD_DISPLAY_USE...
-	// preprocessor definitions
-	dispHandle = Display_open(Display_Type_ANY, NULL);
+	// Open the console UART directly (the same UART the Display module
+	// maps) so we can both print status and receive single-line commands.
+	// The Display driver is output only; the CatSniffer v3 has no user
+	// buttons, so the run mode has to be driven over UART instead.
+	{
+		UART2_Params uartParams;
 
-	// Report the fixed-seed fallback once the display is open
-	if (!spamTrngOk) {
-		Display_printf(dispHandle, 0, 0,
-			       "ERR: TRNG unavailable, fixed seed used");
+		UART2_Params_init(&uartParams);
+		uartParams.baudRate = 921600;
+		uartParams.writeMode = UART2_Mode_BLOCKING;
+		uartParams.readMode = UART2_Mode_CALLBACK;
+		uartParams.readCallback = BleSpam_uartReadCb;
+		uartParams.readReturnMode = UART2_ReadReturnMode_PARTIAL;
+		uartHandle = UART2_open(CONFIG_DISPLAY_UART, &uartParams);
+		if (uartHandle != NULL) {
+			// Arm the first single-byte read; the callback re-arms.
+			UART2_read(uartHandle, &spamRxByte, 1, NULL);
+		}
 	}
 
-	// Buttons: BTN-1 (KEY_LEFT) start/stop, BTN-2 (KEY_RIGHT) cycle mode.
-	// Only board_key.c is used; the two_btn_menu framework is not wired.
+	// Report the fixed-seed fallback once the UART is open
+	if (!spamTrngOk) {
+		BleSpam_log("ERR: TRNG unavailable, fixed seed used");
+	}
+
+	// The CatSniffer v3 has no user buttons; board_key.c is still wired for
+	// LaunchPad builds but never fires here. Runtime control is over UART
+	// (see BleSpam_handleCommand): "help" lists the commands.
 	Board_initKeys(BleSpam_keyChangeHandler);
+	BleSpam_log("SPAM: UART control ready (type 'help')");
 }
 
 /*********************************************************************
@@ -906,8 +1083,7 @@ static void BleSpam_taskFxn(UArg a0, UArg a1)
 {
 	// Initialize application
 	BleSpam_init();
-	Display_printf(dispHandle, 0, 0, "CatSniffer:BleSpam %s",
-		       spam_models_mode_name(spamMode));
+	BleSpam_log("CatSniffer:BleSpam %s", spam_models_mode_name(spamMode));
 	// Application main loop
 	for (;;) {
 		uint32_t events;
@@ -1156,6 +1332,11 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 
 	case SPAM_KEY_CHANGE_EVT:
 		BleSpam_handleKeys(*(uint8_t *)(pMsg->pData));
+		break;
+
+	case SPAM_UART_CMD_EVT:
+		BleSpam_handleCommand(spamCmdBuf);
+		spamCmdReady = 0;
 		break;
 
 	case SPAM_ADV_EVT:
@@ -1567,7 +1748,7 @@ static void BleSpam_handleKeys(uint8_t keys)
 	if (keys & KEY_LEFT) {
 		if (BleSpam_is_running()) {
 			BleSpam_stop();
-			Display_printf(dispHandle, 0, 0, "SPAM: stopped");
+			BleSpam_log("SPAM: stopped");
 		} else {
 			BleSpam_start(spamMode);
 		}
@@ -1577,8 +1758,7 @@ static void BleSpam_handleKeys(uint8_t keys)
 		bt_spam_mode_t next =
 			(bt_spam_mode_t)((spamMode + 1) % BT_SPAM_MODE_MAX);
 
-		Display_printf(dispHandle, 0, 0, "SPAM: mode -> %s",
-			       spam_models_mode_name(next));
+		BleSpam_log("SPAM: mode -> %s", spam_models_mode_name(next));
 
 		if (BleSpam_is_running()) {
 			// Restart the cycle on the new mode's model list
@@ -1694,7 +1874,7 @@ static void BleSpam_processAdvEvent(spamGapAdvEventData_t *pEventData)
 		break;
 
 	case GAP_EVT_INSUFFICIENT_MEMORY:
-		Display_printf(dispHandle, 0, 0, "ERR: adv insuff mem");
+		BleSpam_log("ERR: adv insuff mem");
 		break;
 
 	default:
