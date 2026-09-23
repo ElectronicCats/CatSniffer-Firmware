@@ -586,6 +586,29 @@ La implementación de referencia tiene **tres capas**:
   - `ble_spam.c` 2.051 → 2.442 líneas y `ble_spam.h` +20 líneas (diff de la sesión: +454/−43 tras clang-format).
   - La carga inicial de `advData1` se eliminó a propósito: el adv set solo lleva `scanResData1` hasta que `BleSpam_start()` inyecta el primer payload de spam.
 
+### Session #5 — 2026-09-23
+
+- **Fase en curso:** Fase 4 — Modos, botones e interfaz UART (§3), **completada**.
+- **Tareas completadas en esta sesión:**
+  - Fase 4 t.1: `#ifndef BLE_SPAM_DEFAULT_MODE #define BLE_SPAM_DEFAULT_MODE BT_SPAM_MODE_ALL` en `ble_spam.c` (con nota `-DBLE_SPAM_DEFAULT_MODE=BT_SPAM_MODE_APPLE` para variantes por fabricante) y `static bt_spam_mode_t spamMode = BLE_SPAM_DEFAULT_MODE;` (antes literal `BT_SPAM_MODE_ALL`).
+  - Fase 4 t.2: `USE_MENU := 1` en `linux-build/projects/ble_spam.mak` (compila `board_key.c` + `two_btn_menu.c`). Registro de `Board_initKeys(BleSpam_keyChangeHandler)` al final de `BleSpam_init()`. Nuevo `case SPAM_KEY_CHANGE_EVT` en `BleSpam_processAppMsg` → `BleSpam_handleKeys(uint8_t keys)`: **BTN-1 (KEY_LEFT)** = toggle `BleSpam_start(spamMode)`/`BleSpam_stop()`; **BTN-2 (KEY_RIGHT)** = ciclar modo `(spamMode + 1) % BT_SPAM_MODE_MAX` (ALL→APPLE→ANDROID→WINDOWS→SAMSUNG→ALL) — si corre, `BleSpam_start(next)` reinicia el ciclo; si no, actualiza `spamMode` + `spam_models_rebuild_active`.
+  - Fase 4 t.3: banner de arranque `CatSniffer:BleSpam %s` con el nombre del modo (antes solo `CatSniffer:BleSpam`); línea `SPAM: mode -> %s` en cada cambio de modo; línea `SPAM: stopped` al parar; la línea por ciclo `SPAM: <modelo> (i/n)` ya venía de la Fase 3.
+  - Fase 4 t.4: el "callback de display" de `bt_spam_register_cb` se resuelve con las llamadas directas a `Display_printf` sobre `dispHandle` (mismo flujo que el original), sin registro de callback externo.
+  - Fase 4 t.5: error visible añadido `BleSpam_logErr("adv create", status)` antes del `BLESPAM_ASSERT` de `GapAdv_create`; `TRNG_open`/semilla ya emitían `ERR: TRNG unavailable, fixed seed used` (Fase 3) y prepare/load emiten `ERR: adv swap <status>`.
+  - Verificaciones: `make ble_spam` → verde, **sin warnings de `tiarmclang`**; FLASH `0x000236fb` = **145.147 B (20,4 % de 712.704)** < 30 % (sube ~641 B sobre los 144.506 B de la Fase 3: `board_key.c` + handler; `two_btn_menu.c` compila pero el linker descarta sus secciones no referenciadas). `make all -j4` → los 3 firmwares previos con FLASH **idéntico** a la línea base (134.571 / 138.356 / 138.922 B). Test de host → **PASS** (modelos sin tocar). `pre-commit run --files ble_spam.c ble_spam.mak` → **Passed** en la primera pasada (clang-format sin reformateos).
+- **Bloqueos o decisiones pendientes:**
+  - Decisión D11 (nueva): en el SDK 8.33 la función de registro de botones es `Board_initKeys(keysPressedCB_t)` (no `Board_keyInit` del plan) y `board_key.c` mapea **BTN-1 → KEY_LEFT** y **BTN-2 → KEY_RIGHT** (`board_key.c:163-169`). Se usa **solo** `Board_initKeys` + handler propio; `two_btn_menu` (que `USE_MENU` también compila) **no se referencia** (evita la colisión anticipada en D4; sus secciones las descarta el linker).
+  - Decisión D12 (nueva): sin arranque diferido por botón — el motor auto-arranca en `GAP_DEVICE_INIT_DONE_EVENT` con `BLE_SPAM_DEFAULT_MODE` (comportamiento de la Fase 3 conservado); BTN-1 pasa a ser la parada/reanudación en caliente.
+  - D4 (Session #1): **resuelta** por D11 (compatibilidad `USE_MENU`/`board_key` confirmada por build).
+  - Validación en hardware pendiente (Fase 5): BTN-1 para/reanuda (silencio RF), BTN-2 cambia modo y se refleja en los payloads capturados; requiere CatSniffer v3 + dispositivos.
+  - Cambios de las Sessions #3–#5 **sin commitear** todavía (Fase 2 + Fase 3 + Fase 4); pendiente de decisión de agrupación de commits.
+- **Próximos pasos (para Session #6):**
+  1. Fase 5 (requiere hardware): flashear con `cc2538-bsl`, matriz de validación de modos (§3 Fase 5 t.2), verificación RF (intervalo 20–30 ms, ADV_IND, 37/38/39, rotación ~2 s), soak ≥ 30 min y prueba de BTN-1/BTN-2.
+  2. En paralelo sin hardware (Fase 6 t.1): ampliar `matrix.project` de `.github/workflows/cc1352-ci.yml` con `ble_spam`.
+- **Notas adicionales:**
+  - `ble_spam.c`: +~55 líneas (macro `BLE_SPAM_DEFAULT_MODE`, `BleSpam_handleKeys`, case de teclas, `Board_initKeys`, banner con modo, log de `adv create`).
+  - `two_btn_menu.c` se compila por `USE_MENU` pero queda inerte: si en Fase 6/7 se quiere afinar el tamaño, se puede añadir un flag `USE_KEYS` que compile solo `board_key.c` (decisión no tomada: el crecimiento de 641 B es marginal).
+
 ## 4.3 Plantilla para copiar en próximas sesiones
 
 ```markdown
