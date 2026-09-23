@@ -535,6 +535,28 @@ La implementación de referencia tiene **tres capas**:
   - La Fase 2 no necesita el toolchain de TI y puede ejecutarse en paralelo con el arranque de la Fase 3 (ruta crítica).
   - Decisión D3 intacta: `USE_NPI`/`USE_PROFILES` = 1 por ahora (clon exacto del spoofer); la limpieza se prueba en la Fase 6 tarea 4 (R10).
 
+### Session #3 — 2026-09-22
+
+- **Fase en curso:** Fase 2 — Porte de la capa de modelos y payloads (§3), **completada**.
+- **Tareas completadas en esta sesión:**
+  - Fase 2 t.1: creados `CC1352P7/ble_spam_CC1352P_7/Application/ble_spam_models.h` (API: `bt_spam_mode_t`, `spam_packet_type_t`, `spam_model_t`, `spam_models_init/seed/rebuild_active/count/index/prepare/mode_name`, macro `SPAM_MODEL_MAX_LEN 31`) y sustituido el placeholder de `ble_spam_models.c` por la implementación completa.
+  - Restricción de portabilidad verificada: `grep -E '#include' ble_spam_models.c` → solo `"ble_spam_models.h"`, `<stddef.h>`, `<string.h>`; cabecera → solo `<stdint.h>`. Cero cabeceras ESP/TI.
+  - Fase 2 t.2–3: tabla `spam_models[]` portada íntegra desde Minino `firmware/components/bt_spam/bt_spam.c`: **82 entradas** = 14 Apple Proximity (0x07) + 8 Apple Action (0x10) + 10 Fast Pair (0xFE2C) + 4 Swift Pair + 26 Samsung Watch + 20 Samsung Buds (0x0075, macros `SPAM_SAMSUNG_WATCH/BUDS`). **Verificación de fidelidad byte a byte** con script Python (compara `.name`/`.type`/`.len`/`.data` explícitos e invocaciones macro contra el original): 36+36+36+36 campos y 46 invocaciones → idénticos. `model_matches_mode()`/rebuild con la misma semántica (incl. fallback a ALL si el filtro quedara vacío).
+  - Fase 2 t.4: `spam_models_prepare()` replica exactamente la randomización por tipo del original: Proximity → bytes 11, 15-18; Action → bytes 9-14; Swift/Samsung/Fast Pair → sin randomización (el anti-dedup de Samsung lo aporta la MAC rotativa, Fase 3).
+  - Fase 2 t.5: PRNG xorshift32 local con `spam_models_seed(uint32_t)` (estado inicial `0x2545F491`; semilla 0 remapeada a 1 para no quedarse bloqueado). Sin dependencias externas; en target se sembrará con TRNG en la Fase 3.
+  - Fase 2 t.7: test de host `tools/ble_spam_models_test.c` → compila con `gcc -Wall -Wextra` **sin avisos** y sale con `PASS` (exit 0): (a) 82 modelos; (b) 82 payloads con `len` 1–31 y coherencia AD (Apple/Samsung single-AD `len == 1+data[0]`; Fast Pair/Swift multi-AD con primer estructura contenida); (c) recuentos por modo **ALL=82, APPLE=22, ANDROID=10, WINDOWS=4, SAMSUNG=46** (suman 82 → son los esperados de la matriz de la Fase 5); (d) con semilla 1234, dos `spam_models_prepare()` consecutivos del mismo modelo Apple producen payloads distintos con `len` correcto, y re-sembrar reproduce la secuencia (PRNG sembrable). Extras validados: Fast Pair constante por diseño, wrap-around de `spam_models_index()`, nombres de modo y aislamiento APPLE↔otros.
+  - Calidad: `pre-commit run --files <ficheros nuevos>` → segunda pasada limpia (la primera reformateó con clang-format). **Lección reforzada de Session #2**: `--files` sí cubre ficheros sin trackear (a diferencia de `--all-files`), pero la primera pasada siempre puede modificar; ejecutar dos veces antes de dar por buena la calidad.
+  - Regresión: `make ble_spam` → verde, sin warnings de `tiarmclang`, tras el porte y tras el reformateo. FLASH **sin cambios: 137.939 B (0x21ad3)** — el `.map` no contiene el símbolo `spam_models`: el linker descarta las secciones no referenciadas y `ble_spam.c` aún no incluye la cabecera (cableado en la Fase 3). Esperar un crecimiento de ~3,3 KB en `.rodata` al cablearla; no confundir con una regresión.
+- **Bloqueos o decisiones pendientes:**
+  - Decisión D6 (nueva): `model_matches_mode()` devuelve `uint8_t` (0/1) en vez de `bool` para respetar la lista de cabeceras permitidas (sin `<stdbool.h>`); la API pública no expone booleanos.
+  - Confirmado el recuento de 82 modelos del plan (el §1.2/§2.3 lo da por bueno; contar bloques a mano induce a error — usar los recuentos por modo del test).
+  - Sin bloqueos. `ble_spam.c` **no se ha tocado** en esta fase (cableado reservado a la Fase 3, según el plan).
+  - Cambios de la sesión **sin commitear** todavía (pendiente de decisión: commit ahora o al final de la Fase 3/Fase 6).
+- **Próximos pasos (para Session #4):**
+  1. Fase 3, t.1–5 (ruta crítica): sembrar `spam_models_seed()` con TRNG en `BleSpam_init`, `ADDRMODE_RANDOM` con dirección 0xC0 en `GAP_DeviceInit`, creación del adv set con `.eventProps` ADV_IND / `primInt 0x20–0x30` / `GAP_ADV_CHAN_ALL`, clock one-shot de 250 ms y `BleSpam_processSpamCycle` (avanzar índice → `spam_models_prepare()` → recarga prepare/load con fallback → rotación de MAC cada 8 ciclos dentro de la ventana disable → rearma del clock → log `SPAM: <modelo> (i/n)`).
+  2. Fase 3, t.6–8: eventos GAP (`SET_TERMINATED` con reintento, `GAP_LINK_ESTABLISHED` → `GAP_TerminateLinkReq` inmediato + re-habilitado en `LINK_TERMINATED`), API `BleSpam_start/stop/is_running` e instrumentación de arranque + contador cada 100 ciclos.
+  3. Verificaciones para cerrar: `make ble_spam` en verde y FLASH < 30 % (`.map`), test de host sigue en PASS, y en hardware: captura RF con ADV_IND 20–30 ms en 37/38/39, payload cambiando ≈4 veces/s y dirección ≈cada 2 s (Fase 5 cuando haya hardware).
+
 ## 4.3 Plantilla para copiar en próximas sesiones
 
 ```markdown
