@@ -609,6 +609,37 @@ La implementación de referencia tiene **tres capas**:
   - `ble_spam.c`: +~55 líneas (macro `BLE_SPAM_DEFAULT_MODE`, `BleSpam_handleKeys`, case de teclas, `Board_initKeys`, banner con modo, log de `adv create`).
   - `two_btn_menu.c` se compila por `USE_MENU` pero queda inerte: si en Fase 6/7 se quiere afinar el tamaño, se puede añadir un flag `USE_KEYS` que compile solo `board_key.c` (decisión no tomada: el crecimiento de 641 B es marginal).
 
+### Session #6 — 2026-09-23
+
+- **Fase en curso:** Fase 5 — Testing y validación en hardware (§3), **parcial**; + ampliación de alcance aprobada: **control por UART** (revisión de la Fase 4).
+- **Tareas completadas en esta sesión:**
+  - Flasheo (Fase 5 t.1): `catnip flash out/ble_spam/ble_spam_CC1352P_7.hex`. `catnip status` → placa v3 (RP2040 + CC1352P7), **CC1352 FW `ble_spam_cc1352p_7 (custom)`**, bridge port del CC1352 = `/dev/ttyACM1`, shell = `/dev/ttyACM3`.
+  - Verificación por log (UART 921600 en `/dev/ttyACM1`): ciclo de payloads activo; cadencia medida en régimen permanente **4,0/s (periodo medio 252,9 ms)** = dwell 250 ms del plan (el pico inicial de ~94/s era solo backlog de los buffers, no la cadencia real); contador `SPAM: cycles=` incrementando (visto `cycles=3100`, ~13 min de uptime sin reset); captura de 35 s **sin líneas `ERR:`/assert** (soak parcial, R1/R2 sin incidencias).
+  - Matriz de modos (Fase 5 t.2): **fila SAMSUNG validada con dispositivo real** (Samsung Galaxy S24+) → popup de emparejamiento **Galaxy Watch** (modo ALL primero; luego modo SAMSUNG aislado).
+  - **HALLAZGO/BLOQUEO B2:** la CatSniffer v3 **no tiene botones de usuario** (solo **Boot** y **Reset**, que van al bootloader/reset). Los `CONFIG_GPIO_BTN1/2` de la Fase 4 (BTN-1 parar/reanudar, BTN-2 cambiar modo) son **código muerto en este hardware** → **Fase 5 t.7 no realizable** tal como estaba escrita. Contradice la premisa de D4/D11. (El "device disconnected" durante una prueba fue el usuario pulsando Reset, no un fallo del firmware.)
+  - **AMPLIACIÓN DE ALCANCE (aprobada por el usuario):** control por UART en `ble_spam.c` como sustituto de los botones.
+    - Se sustituye el driver `Display` (solo TX) por apertura directa de `UART2_open(CONFIG_DISPLAY_UART, &params)` en `BleSpam_init` (readMode `UART2_Mode_CALLBACK` de 1 byte con re-arme, writeMode `UART2_Mode_BLOCKING`, 921600). **Sin tocar SysConfig**: se reutiliza la misma instancia UART0/pines que generaba el módulo Display; solo se deja de llamar a `Display_open`.
+    - `BleSpam_log(const char *fmt, ...)` (formatea con `SystemP_vsnprintf` —ya enlazado por el DPL, sin nueva librería— y añade `\r\n`) sustituye las **12** llamadas activas `Display_printf(dispHandle, 0, 0, …)`.
+    - `BleSpam_uartReadCb` (contexto HWI/SWI) ensambla la línea y, en CR/LF, postea `SPAM_UART_CMD_EVT` (=10; `APP_EVT_EVENT_MAX` 0x9→0xA, `appEventStrings` +`APP_UART_CMD_EVT`) al task vía `BleSpam_enqueueMsg`; se descartan bytes mientras hay un comando pendiente. `BleSpam_handleCommand` (task) parsea: `all/apple/android/windows/samsung` (o `a/p/n/w/s`), `start` (`r`/`run`), `stop` (`x`), `status` (`st`), `help` (`?`). Con el motor corriendo, cambiar de modo hace `BleSpam_start(nuevo)`.
+    - `dispHandle` se conserva como **global NULL** solo para que enlace el `AssertHandler` de `Startup/main.c` (en un assert su `Display_open` falla porque UART2 ya posee el puerto, y los `Display_print0(NULL, …)` son no-ops seguros).
+  - **Verificación del control por UART en hardware** (secuencia enviada por `/dev/ttyACM1`): `help` → lista de comandos; `status` → `SPAM: mode=ALL running=1 models=82`; `samsung` → `SPAM: start mode=SAMSUNG models=46` y ciclo solo Samsung (Fallback Watch, W4/W5…); `stop` → `SPAM: stopped` y **0 líneas de ciclo** en la ventana siguiente (silencio RF confirmado por log); `start` → reanuda en el modo actual; `all` → vuelve a 82 modelos; comando inválido `foo` → `ERR: unknown cmd 'foo' (type help)`. **Esto valida el equivalente de la Fase 5 t.7 (parar/reanudar + cambio de modo) por UART.**
+  - Build/regresión: `./compile_cc1352p7.sh -f ble_spam` verde, **sin warnings de `tiarmclang`**; FLASH `0x00023d8a` = **146.826 B (20,6 % de 712.704)** < 30 % (+~1,7 KB sobre los 145.147 B de la Fase 4: capa de comandos + `SystemP_vsnprintf`). `make all`: `airtag_scanner` 134.571 B y `justworks_scanner` 138.922 B **idénticos** a la línea base (airtag_spoofer no recompilado; el porte no comparte fuentes). Test de host `tools/ble_spam_models_test.c` → **PASS**. `pre-commit run --files ble_spam.c` → 2ª pasada **limpia** (clang-format reformateó en la 1ª).
+- **Bloqueos o decisiones pendientes:**
+  - **Decisión D13 (nueva):** control por **UART** en lugar de botones (hardware sin botones); comandos de texto por `/dev/ttyACM1` a 921600.
+  - **Decisión D14 (nueva):** `Display` → `UART2` directo compartiendo la instancia `CONFIG_DISPLAY_UART`; `dispHandle` queda como NULL de compatibilidad para el `AssertHandler`.
+  - **D4/D11 (botones): reevaluadas** — `board_key.c`/`two_btn_menu.c` quedan inertes en la CatSniffer (solo útiles en LaunchPad); `USE_MENU` podría bajarse a solo-`board_key` o eliminarse en Fase 6/7.
+  - **Preferencia del usuario (registrada):** compilar con `./compile_cc1352p7.sh -f <fw>` (no `make` directo).
+  - Cambios de esta sesión **y de las Sessions #3–#5 sin commitear** todavía.
+  - **Pendiente de hardware:** filas APPLE/ANDROID/WINDOWS de la matriz (requieren iPhone / Android con Fast Pair / Windows 10-11, ahora aislables por UART); captura RF con sniffer (intervalo 20–30 ms, canales 37/38/39, rotación de MAC ~2 s); soak ≥ 30 min; termal (R5).
+- **Próximos pasos (para Session #7):**
+  1. Completar la matriz de modos con dispositivos de otros ecosistemas, aislando con los comandos UART `apple`/`android`/`windows`.
+  2. Captura RF con un segundo radio (nRF Connect / segunda CatSniffer) para verificar intervalo, canales y rotación de dirección.
+  3. Soak ≥ 30 min en modo ALL (contar líneas `SPAM:` ≈ 4/s vs. tiempo) y revisión termal tras el soak.
+  4. Fase 6 t.1: añadir `ble_spam` a la matriz `matrix.project` de `.github/workflows/cc1352-ci.yml`; documentar el control por UART en `CC1352P7/README.md`.
+- **Notas adicionales:**
+  - El equipo quedó en **modo SAMSUNG aislado** al cierre de la sesión.
+  - El control por UART hace el firmware realmente operable en la CatSniffer (sin él, el modo solo se fijaba en compilación con `-DBLE_SPAM_DEFAULT_MODE`).
+
 ## 4.3 Plantilla para copiar en próximas sesiones
 
 ```markdown
