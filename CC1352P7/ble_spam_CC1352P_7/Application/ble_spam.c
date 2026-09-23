@@ -116,6 +116,12 @@
 #define SPAM_TASK_STACK_SIZE 1024
 #endif
 
+// Compile-time default spam mode; override to build per-vendor .hex variants
+// without touching the UI, e.g. -DBLE_SPAM_DEFAULT_MODE=BT_SPAM_MODE_APPLE
+#ifndef BLE_SPAM_DEFAULT_MODE
+#define BLE_SPAM_DEFAULT_MODE BT_SPAM_MODE_ALL
+#endif
+
 // Application events
 #define SPAM_STATE_CHANGE_EVT 0
 #define SPAM_CHAR_CHANGE_EVT 1
@@ -299,7 +305,7 @@ static GAP_Addr_Modes_t addrMode = ADDRMODE_RANDOM;
 static bool spamAdvReady; // Adv set created (GAP init done)
 static bool spamRunning;  // 250 ms cycle engine active
 static bool spamTrngOk;	  // TRNG seed available
-static bt_spam_mode_t spamMode = BT_SPAM_MODE_ALL;
+static bt_spam_mode_t spamMode = BLE_SPAM_DEFAULT_MODE;
 static uint8_t spamActiveIdx;	     // Position in the active model list
 static uint16_t spamCycleCount;	     // Cycles since BleSpam_start()
 static spam_model_t spamCurModel;    // Stack keeps the pointer after load
@@ -332,6 +338,7 @@ static void BleSpam_processPasscode(spamPasscodeData_t *pPasscodeData);
 static void BleSpam_charValueChangeCB(uint8_t paramId);
 static status_t BleSpam_enqueueMsg(uint8_t event, void *pData);
 static void BleSpam_keyChangeHandler(uint8 keys);
+static void BleSpam_handleKeys(uint8_t keys);
 static void BleSpam_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg);
 static void BleSpam_initPHYRSSIArray(void);
 static void BleSpam_updatePHYStat(uint16_t eventCode, uint8_t *pMsg);
@@ -882,6 +889,10 @@ static void BleSpam_init(void)
 		Display_printf(dispHandle, 0, 0,
 			       "ERR: TRNG unavailable, fixed seed used");
 	}
+
+	// Buttons: BTN-1 (KEY_LEFT) start/stop, BTN-2 (KEY_RIGHT) cycle mode.
+	// Only board_key.c is used; the two_btn_menu framework is not wired.
+	Board_initKeys(BleSpam_keyChangeHandler);
 }
 
 /*********************************************************************
@@ -895,7 +906,8 @@ static void BleSpam_taskFxn(UArg a0, UArg a1)
 {
 	// Initialize application
 	BleSpam_init();
-	Display_printf(dispHandle, 0, 0, "CatSniffer:BleSpam");
+	Display_printf(dispHandle, 0, 0, "CatSniffer:BleSpam %s",
+		       spam_models_mode_name(spamMode));
 	// Application main loop
 	for (;;) {
 		uint32_t events;
@@ -1142,6 +1154,10 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 		BleSpam_processCharValueChangeEvt(*(uint8_t *)(pMsg->pData));
 		break;
 
+	case SPAM_KEY_CHANGE_EVT:
+		BleSpam_handleKeys(*(uint8_t *)(pMsg->pData));
+		break;
+
 	case SPAM_ADV_EVT:
 		BleSpam_processAdvEvent((spamGapAdvEventData_t *)(pMsg->pData));
 		break;
@@ -1259,6 +1275,9 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 			// Create Advertisement set #1 and assign handle
 			status = GapAdv_create(&BleSpam_advCallback,
 					       &advParams1, &advHandleLegacy);
+			if (status != SUCCESS) {
+				BleSpam_logErr("adv create", status);
+			}
 			BLESPAM_ASSERT(status == SUCCESS);
 
 			// Only the scan response is loaded here: the first
@@ -1528,6 +1547,46 @@ static void BleSpam_clockHandler(UArg arg)
 	} else if (pData->event == SPAM_SEND_PARAM_UPDATE_EVT) {
 		// Send message to app
 		BleSpam_enqueueMsg(SPAM_SEND_PARAM_UPDATE_EVT, pData);
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_handleKeys
+ *
+ * @brief   Act on a debounced button press (task context).
+ *          BTN-1 (KEY_LEFT) toggles the spam engine on/off.
+ *          BTN-2 (KEY_RIGHT) cycles the mode
+ *          ALL -> APPLE -> ANDROID -> WINDOWS -> SAMSUNG -> ALL.
+ *
+ * @param   keys - bitmap of pressed keys (KEY_LEFT / KEY_RIGHT)
+ *
+ * @return  none
+ */
+static void BleSpam_handleKeys(uint8_t keys)
+{
+	if (keys & KEY_LEFT) {
+		if (BleSpam_is_running()) {
+			BleSpam_stop();
+			Display_printf(dispHandle, 0, 0, "SPAM: stopped");
+		} else {
+			BleSpam_start(spamMode);
+		}
+	}
+
+	if (keys & KEY_RIGHT) {
+		bt_spam_mode_t next =
+			(bt_spam_mode_t)((spamMode + 1) % BT_SPAM_MODE_MAX);
+
+		Display_printf(dispHandle, 0, 0, "SPAM: mode -> %s",
+			       spam_models_mode_name(next));
+
+		if (BleSpam_is_running()) {
+			// Restart the cycle on the new mode's model list
+			BleSpam_start(next);
+		} else {
+			spamMode = next;
+			spam_models_rebuild_active(spamMode);
+		}
 	}
 }
 
