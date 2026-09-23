@@ -48,6 +48,10 @@
 #ifndef BLESPAM_H
 #define BLESPAM_H
 
+#include <stdbool.h>
+
+#include "ble_spam_models.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -72,6 +76,22 @@ extern "C" {
  * Task creation function for the BLE Spam application.
  */
 extern void BleSpam_createTask(void);
+
+/*
+ * Start the spam engine: rebuild the active model list, load the first
+ * payload and arm the 250 ms advertising cycle.
+ */
+extern void BleSpam_start(bt_spam_mode_t mode);
+
+/*
+ * Stop the spam engine: disarm the cycle clock and disable advertising.
+ */
+extern void BleSpam_stop(void);
+
+/*
+ * Returns true while the 250 ms advertising cycle is running.
+ */
+extern bool BleSpam_is_running(void);
 
 /*********************************************************************
 *********************************************************************/

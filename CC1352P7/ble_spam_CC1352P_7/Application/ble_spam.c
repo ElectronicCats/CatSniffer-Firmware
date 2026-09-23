@@ -61,6 +61,7 @@
 #endif
 
 #include <ti/drivers/GPIO.h>
+#include <ti/drivers/TRNG.h>
 #include <ti/drivers/utils/List.h>
 
 #include <icall.h>
@@ -81,6 +82,7 @@
 
 #include <ble_spam.h>
 #include "ti_ble_config.h"
+#include "ble_spam_models.h"
 
 #ifdef PTM_MODE
 #include "npi_task.h"	  // To allow RX event registration
@@ -102,6 +104,11 @@
 // How often to perform periodic event (in ms)
 #define SPAM_PERIODIC_EVT_PERIOD 5000
 
+// Spam engine cycle instrumentation
+#define SPAM_CYCLE_EVT_PERIOD 250 // Payload cycle period (ms)
+#define SPAM_MAC_ROTATE_CYCLES 8  // Cycles between MAC rotations
+#define SPAM_STATS_CYCLES 100	  // Cycles between stats log lines
+
 // Task configuration
 #define SPAM_TASK_PRIORITY 1
 
@@ -119,6 +126,8 @@
 #define SPAM_PERIODIC_EVT 6
 #define SPAM_SEND_PARAM_UPDATE_EVT 7
 #define SPAM_CONN_EVT 8
+
+#define SPAM_CYCLE_EVT 9
 
 // Internal Events for RTOS application
 #define SPAM_ICALL_EVT ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -231,13 +240,13 @@ Task_Struct spamTask;
 #endif
 uint8_t spamTaskStack[SPAM_TASK_STACK_SIZE];
 
-#define APP_EVT_EVENT_MAX 0x8
+#define APP_EVT_EVENT_MAX 0x9
 char *appEventStrings[] = {
 	"APP_STATE_CHANGE_EVT     ", "APP_CHAR_CHANGE_EVT      ",
 	"APP_KEY_CHANGE_EVT       ", "APP_ADV_EVT              ",
 	"APP_PAIR_STATE_EVT       ", "APP_PASSCODE_EVT         ",
 	"APP_PERIODIC_EVT         ", "APP_SEND_PARAM_UPDATE_EVT",
-	"APP_CONN_EVT             ",
+	"APP_CONN_EVT             ", "APP_SPAM_CYCLE_EVT       ",
 };
 
 /*********************************************************************
@@ -262,6 +271,12 @@ static Clock_Struct clkPeriodic;
 // Memory to pass periodic event ID to clock handler
 spamClockEventData_t argPeriodic = { .event = SPAM_PERIODIC_EVT };
 
+// One-shot clock for the spam payload cycle
+static Clock_Struct clkSpamCycle;
+
+// Memory to pass the spam cycle event ID to the clock handler
+spamClockEventData_t argSpamCycle = { .event = SPAM_CYCLE_EVT };
+
 // Per-handle connection info
 static spamConnRec_t connList[MAX_NUM_BLE_CONNS];
 
@@ -277,8 +292,19 @@ uint8_t autoConnect = AUTOCONNECT_DISABLE;
 // Advertising handles
 static uint8 advHandleLegacy;
 
-// Address mode
-static GAP_Addr_Modes_t addrMode = DEFAULT_ADDRESS_MODE;
+// Address mode: static random address (0xC0), rotated every 8 cycles
+static GAP_Addr_Modes_t addrMode = ADDRMODE_RANDOM;
+
+// Spam engine state
+static bool spamAdvReady; // Adv set created (GAP init done)
+static bool spamRunning;  // 250 ms cycle engine active
+static bool spamTrngOk;	  // TRNG seed available
+static bt_spam_mode_t spamMode = BT_SPAM_MODE_ALL;
+static uint8_t spamActiveIdx;	     // Position in the active model list
+static uint16_t spamCycleCount;	     // Cycles since BleSpam_start()
+static spam_model_t spamCurModel;    // Stack keeps the pointer after load
+static uint8_t spamAddr[B_ADDR_LEN]; // Rotating static random address
+static uint32_t spamAddrRng;	     // xorshift32 state for addresses
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -320,6 +346,13 @@ static status_t BleSpam_setPhy(uint16_t connHandle, uint8_t allPhys,
 static uint8_t BleSpam_clearConnListEntry(uint16_t connHandle);
 static void BleSpam_connEvtCB(Gap_ConnEventRpt_t *pReport);
 static void BleSpam_processConnEvt(Gap_ConnEventRpt_t *pReport);
+static void BleSpam_initRandom(void);
+static void BleSpam_processSpamCycle(void);
+static void BleSpam_swapPayload(const spam_model_t *pModel, bool rotateAddr);
+static void BleSpam_rotateAddress(void);
+static uint32_t BleSpam_addrRand(void);
+static void BleSpam_logErr(const char *what, bStatus_t status);
+static void BleSpam_logAddr(const char *tag, const uint8_t *addr);
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -358,6 +391,325 @@ void BleSpam_createTask(void)
 	taskParams.priority = SPAM_TASK_PRIORITY;
 
 	Task_construct(&spamTask, BleSpam_taskFxn, &taskParams, NULL);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_start
+ *
+ * @brief   Rebuild the active model list for the given mode, load the
+ *          first payload and arm the 250 ms advertising cycle.
+ *
+ * @param   mode - spam mode to run (BT_SPAM_MODE_ALL, ...)
+ *
+ * @return  None.
+ */
+void BleSpam_start(bt_spam_mode_t mode)
+{
+	bStatus_t advStatus;
+
+	spamMode = mode;
+	spam_models_rebuild_active(spamMode);
+	spamActiveIdx = 0;
+	spamCycleCount = 0;
+
+	Display_printf(dispHandle, 0, 0,
+		       "SPAM: start mode=%s models=%u int=20-30ms",
+		       spam_models_mode_name(spamMode),
+		       (unsigned)spam_models_count());
+
+	spam_models_prepare(spamActiveIdx, &spamCurModel);
+	Display_printf(dispHandle, 0, 0, "SPAM: model %s (1/%u)",
+		       spamCurModel.name, (unsigned)spam_models_count());
+	BleSpam_logAddr("SPAM: addr", spamAddr);
+
+	if (!spamAdvReady) {
+		return;
+	}
+
+	spamRunning = true;
+	BleSpam_swapPayload(&spamCurModel, false);
+
+	// The swap usually re-enabled the set already; belt and braces
+	advStatus = GapAdv_enable(advHandleLegacy,
+				  GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
+	if ((advStatus != SUCCESS) &&
+	    (advStatus != bleAlreadyInRequestedMode)) {
+		BleSpam_logErr("adv enable", advStatus);
+	}
+
+	Util_startClock(&clkSpamCycle);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_stop
+ *
+ * @brief   Disarm the 250 ms cycle clock and disable advertising.
+ *
+ * @return  None.
+ */
+void BleSpam_stop(void)
+{
+	if (!spamRunning) {
+		return;
+	}
+
+	spamRunning = false;
+	Util_stopClock(&clkSpamCycle);
+	GapAdv_disable(advHandleLegacy);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_is_running
+ *
+ * @brief   Report whether the 250 ms advertising cycle is running.
+ *
+ * @return  true while running.
+ */
+bool BleSpam_is_running(void)
+{
+	return spamRunning;
+}
+
+/*********************************************************************
+ * @fn      BleSpam_logErr
+ *
+ * @brief   Print "ERR: <what> <status>" on the display.
+ *
+ * @param   what   - context of the error
+ * @param   status - bStatus_t returned by the stack
+ *
+ * @return  None.
+ */
+static void BleSpam_logErr(const char *what, bStatus_t status)
+{
+	Display_printf(dispHandle, 0, 0, "ERR: %s %d", what, (int)status);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_logAddr
+ *
+ * @brief   Print a Bluetooth address, most significant byte first.
+ *
+ * @param   tag  - prefix of the line
+ * @param   addr - 6-byte address (little-endian on air)
+ *
+ * @return  None.
+ */
+static void BleSpam_logAddr(const char *tag, const uint8_t *addr)
+{
+	Display_printf(dispHandle, 0, 0, "%s %02x:%02x:%02x:%02x:%02x:%02x",
+		       tag, (unsigned)addr[5], (unsigned)addr[4],
+		       (unsigned)addr[3], (unsigned)addr[2], (unsigned)addr[1],
+		       (unsigned)addr[0]);
+}
+
+/*********************************************************************
+ * @fn      BleSpam_addrRand
+ *
+ * @brief   xorshift32 step used for the rotating random address.
+ *
+ * @return  Next pseudo-random word (never 0).
+ */
+static uint32_t BleSpam_addrRand(void)
+{
+	uint32_t x = spamAddrRng;
+
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+
+	if (x == 0) {
+		x = 0xA5A5A5A5u;
+	}
+
+	spamAddrRng = x;
+	return x;
+}
+
+/*********************************************************************
+ * @fn      BleSpam_rotateAddress
+ *
+ * @brief   Generate a new static random address (two MSBs set to 11)
+ *          and push it to the controller.
+ *
+ * @return  None.
+ */
+static void BleSpam_rotateAddress(void)
+{
+	uint8_t i;
+	hciStatus_t status;
+
+	for (i = 0; i < (B_ADDR_LEN - 1); i++) {
+		spamAddr[i] = (uint8_t)BleSpam_addrRand();
+	}
+
+	// Byte 5 holds the two most significant bits (little-endian)
+	spamAddr[B_ADDR_LEN - 1] =
+		(uint8_t)((uint8_t)BleSpam_addrRand() | 0xC0);
+
+	status = HCI_LE_SetRandomAddressCmd(spamAddr);
+	if (status != SUCCESS) {
+		BleSpam_logErr("set random addr", status);
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_initRandom
+ *
+ * @brief   One-shot TRNG read: model PRNG seed (4 B), address PRNG
+ *          seed (4 B) and initial static random address (6 B). Falls
+ *          back to fixed values when the TRNG is unavailable (D9).
+ *
+ * @return  None.
+ */
+static void BleSpam_initRandom(void)
+{
+	static const uint8_t fallbackAddr[B_ADDR_LEN] = { 0x11, 0x22, 0x33,
+							  0x44, 0x55, 0xC0 };
+	uint8_t rnd[14]; // 4 model seed + 4 addr seed + 6 addr
+	uint32_t modelSeed;
+	uint32_t addrSeed;
+	TRNG_Handle trngHandle = TRNG_open(CONFIG_TRNG_0, NULL);
+
+	spamTrngOk = false;
+
+	if ((trngHandle != NULL) &&
+	    (TRNG_getRandomBytes(trngHandle, rnd, sizeof(rnd)) ==
+	     TRNG_STATUS_SUCCESS)) {
+		spamTrngOk = true;
+	}
+
+	if (trngHandle != NULL) {
+		TRNG_close(trngHandle);
+	}
+
+	if (spamTrngOk) {
+		modelSeed = (uint32_t)rnd[0] | ((uint32_t)rnd[1] << 8) |
+			    ((uint32_t)rnd[2] << 16) | ((uint32_t)rnd[3] << 24);
+		addrSeed = (uint32_t)rnd[4] | ((uint32_t)rnd[5] << 8) |
+			   ((uint32_t)rnd[6] << 16) | ((uint32_t)rnd[7] << 24);
+
+		spam_models_seed(modelSeed);
+		spamAddrRng = (addrSeed != 0) ? addrSeed : 0x9E3779B9u;
+
+		memcpy(spamAddr, &rnd[8], B_ADDR_LEN);
+		spamAddr[B_ADDR_LEN - 1] |= 0xC0;
+	} else {
+		// Fixed fallback, reported by BleSpam_init() on display
+		spam_models_seed(0xC5D5E7A1u);
+		spamAddrRng = 0x5A3C2709u;
+		memcpy(spamAddr, fallbackAddr, B_ADDR_LEN);
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_swapPayload
+ *
+ * @brief   Load pModel as the advertising payload, optionally
+ *          rotating the MAC inside the prepare/load window (D7).
+ *
+ * @param   pModel     - model whose randomized payload is loaded
+ * @param   rotateAddr - rotate the static random address first
+ *
+ * @return  None.
+ */
+static void BleSpam_swapPayload(const spam_model_t *pModel, bool rotateAddr)
+{
+	bStatus_t status;
+
+	status = GapAdv_prepareLoadByHandle(advHandleLegacy,
+					    GAP_ADV_FREE_OPTION_DONT_FREE);
+
+	if (status == SUCCESS) {
+		// Set disabled by prepare: change addr then load, which
+		// re-enables the set automatically (stop -> addr -> start)
+		if (rotateAddr) {
+			BleSpam_rotateAddress();
+		}
+
+		spamCurModel = *pModel;
+		status = GapAdv_loadByHandle(advHandleLegacy,
+					     GAP_ADV_DATA_TYPE_ADV,
+					     spamCurModel.len,
+					     spamCurModel.data);
+	} else if (status == bleAlreadyInRequestedMode) {
+		// Set not advertising (D10): plan fallback
+		// disable -> load -> enable
+		GapAdv_disable(advHandleLegacy);
+
+		if (rotateAddr) {
+			BleSpam_rotateAddress();
+		}
+
+		spamCurModel = *pModel;
+		status = GapAdv_loadByHandle(advHandleLegacy,
+					     GAP_ADV_DATA_TYPE_ADV,
+					     spamCurModel.len,
+					     spamCurModel.data);
+
+		if (status == SUCCESS) {
+			status = GapAdv_enable(advHandleLegacy,
+					       GAP_ADV_ENABLE_OPTIONS_USE_MAX,
+					       0);
+			if (status == bleAlreadyInRequestedMode) {
+				status = SUCCESS;
+			}
+		}
+	} else {
+		// Diagnose R1/R2 (bleIncorrectMode, bleGAPBufferInUse, ...)
+		if (status == bleIncorrectMode) {
+			// GapAdv_abortLoad() macro leaves a dangling comma
+			// with zero args on this compiler: expand it by hand
+			(void)icall_directAPI(ICALL_SERVICE_CLASS_BLE,
+					      (uint32_t)IDX_GapAdv_abortLoad);
+		}
+	}
+
+	if (status != SUCCESS) {
+		BleSpam_logErr("adv swap", status);
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_processSpamCycle
+ *
+ * @brief   Advance the active model, randomize and load its payload,
+ *          rotate the MAC every 8 cycles and rearm the 250 ms clock.
+ *
+ * @return  None.
+ */
+static void BleSpam_processSpamCycle(void)
+{
+	bool rotateAddr;
+
+	if (!spamRunning) {
+		return;
+	}
+
+	// Incoming links take the radio: skip the swap but keep the
+	// engine alive (the link is terminated by the GAP handler)
+	if (linkDB_NumActive() > 0) {
+		Util_startClock(&clkSpamCycle);
+		return;
+	}
+
+	spamActiveIdx = (uint8_t)((spamActiveIdx + 1) % spam_models_count());
+	spam_models_prepare(spamActiveIdx, &spamCurModel);
+
+	spamCycleCount++;
+	rotateAddr = ((spamCycleCount % SPAM_MAC_ROTATE_CYCLES) == 0);
+
+	BleSpam_swapPayload(&spamCurModel, rotateAddr);
+	Util_startClock(&clkSpamCycle);
+
+	Display_printf(dispHandle, 0, 0, "SPAM: %s (%u/%u)", spamCurModel.name,
+		       (unsigned)(spamActiveIdx + 1),
+		       (unsigned)spam_models_count());
+
+	if ((spamCycleCount % SPAM_STATS_CYCLES) == 0) {
+		Display_printf(dispHandle, 0, 0, "SPAM: cycles=%u",
+			       (unsigned)spamCycleCount);
+	}
 }
 
 /*********************************************************************
@@ -406,6 +758,11 @@ static void BleSpam_init(void)
 
 	// Create an RTOS queue for message from profile to be sent to app.
 	appMsgQueueHandle = Util_constructQueue(&appMsgQueue);
+
+	// Create one-shot clock for the spam payload cycle
+	Util_constructClock(&clkSpamCycle, BleSpam_clockHandler,
+			    SPAM_CYCLE_EVT_PERIOD, 0, false,
+			    (UArg)&argSpamCycle);
 
 	// Create one-shot clock for internal periodic events.
 	Util_constructClock(&clkPeriodic, BleSpam_clockHandler,
@@ -499,9 +856,11 @@ static void BleSpam_init(void)
 	// Initialize Connection List
 	BleSpam_clearConnListEntry(LINKDB_CONNHANDLE_ALL);
 
-	// Source address: keep the SysConfig default for now. The rotating
-	// static random address of the spam cycle lands in Phase 3.
-	uint8 *pDevRandAddr = (uint8 *)&pRandomAddress;
+	// Source address: seed the model PRNG and the rotating static
+	// random address from the TRNG (fixed fallback on error)
+	spam_models_init();
+	BleSpam_initRandom();
+	uint8 *pDevRandAddr = (uint8 *)spamAddr;
 
 	BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 			 "APP : ---- call GAP_DeviceInit",
@@ -517,6 +876,12 @@ static void BleSpam_init(void)
 	// The type of display is configured based on the BOARD_DISPLAY_USE...
 	// preprocessor definitions
 	dispHandle = Display_open(Display_Type_ANY, NULL);
+
+	// Report the fixed-seed fallback once the display is open
+	if (!spamTrngOk) {
+		Display_printf(dispHandle, 0, 0,
+			       "ERR: TRNG unavailable, fixed seed used");
+	}
 }
 
 /*********************************************************************
@@ -809,6 +1174,10 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 		BleSpam_processConnEvt((Gap_ConnEventRpt_t *)(pMsg->pData));
 		break;
 
+	case SPAM_CYCLE_EVT:
+		BleSpam_processSpamCycle();
+		break;
+
 	default:
 		// Do nothing.
 		break;
@@ -870,13 +1239,19 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 			// For more information, see the GAP section in the
 			// User's Guide:
 			// http://software-dl.ti.com/lprf/ble5stack-latest/
-			// Spam parameters: 20-30 ms interval (units of 0.625
-			// ms).
+			BleSpam_logAddr("SPAM: init addr", pPkt->devAddr);
+
+			// Spam parameters: ADV_IND (connectable + legacy +
+			// scannable), 20-30 ms interval (units of 0.625 ms),
+			// all three advertising channels, no white list
+			advParams1.eventProps = GAP_ADV_PROP_CONNECTABLE |
+						GAP_ADV_PROP_LEGACY |
+						GAP_ADV_PROP_SCANNABLE;
 			advParams1.primIntMin = 0x20;
 			advParams1.primIntMax = 0x30;
-
-			advParams1.txPower = 0;
 			advParams1.primChanMap = GAP_ADV_CHAN_ALL;
+			advParams1.filterPolicy = GAP_ADV_WL_POLICY_ANY_REQ;
+			advParams1.txPower = 0;
 			BLE_LOG_INT_INT(0, BLE_LOG_MODULE_APP,
 					"APP : ---- call GapAdv_create "
 					"set=%d,%d\n",
@@ -886,16 +1261,8 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 					       &advParams1, &advHandleLegacy);
 			BLESPAM_ASSERT(status == SUCCESS);
 
-			// Load advertising data for set #1 that is statically
-			// allocated by the app
-			status = GapAdv_loadByHandle(advHandleLegacy,
-						     GAP_ADV_DATA_TYPE_ADV,
-						     sizeof(advData1),
-						     advData1);
-			BLESPAM_ASSERT(status == SUCCESS);
-
-			// Load scan response data for set #1 that is statically
-			// allocated by the app
+			// Only the scan response is loaded here: the first
+			// advertising payload is loaded by BleSpam_start()
 			status = GapAdv_loadByHandle(advHandleLegacy,
 						     GAP_ADV_DATA_TYPE_SCAN_RSP,
 						     sizeof(scanResData1),
@@ -908,12 +1275,11 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 				GAP_ADV_EVT_MASK_START_AFTER_ENABLE |
 					GAP_ADV_EVT_MASK_END_AFTER_DISABLE |
 					GAP_ADV_EVT_MASK_SET_TERMINATED);
-
-			// Enable legacy advertising for set #1
-			status = GapAdv_enable(advHandleLegacy,
-					       GAP_ADV_ENABLE_OPTIONS_USE_MAX,
-					       0);
 			BLESPAM_ASSERT(status == SUCCESS);
+
+			// Ready: start the engine (first payload + clock)
+			spamAdvReady = true;
+			BleSpam_start(spamMode);
 		}
 
 		break;
@@ -925,26 +1291,23 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 		BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 				 "APP : ---- got GAP_LINK_ESTABLISHED_EVENT",
 				 0);
-		// Display the amount of current connections
-		uint8_t numActive = linkDB_NumActive();
-
 		if (pPkt->hdr.status == SUCCESS) {
+			bStatus_t termStatus;
+
 			// Add connection to list and start RSSI
 			BleSpam_addConn(pPkt->connectionHandle);
 
 			// Start Periodic Clock.
 			Util_startClock(&clkPeriodic);
-		}
-		if ((numActive < MAX_NUM_BLE_CONNS) &&
-		    (autoConnect == AUTOCONNECT_DISABLE)) {
-			// Start advertising since there is room for more
-			// connections
-			GapAdv_enable(advHandleLegacy,
-				      GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
-		} else {
-			// Stop advertising since there is no room for more
-			// connections
-			GapAdv_disable(advHandleLegacy);
+
+			// Spam does not serve connections: terminate the
+			// incoming link immediately (D8 reason code)
+			termStatus = GAP_TerminateLinkReq(
+				pPkt->connectionHandle,
+				HCI_DISCONNECT_REMOTE_USER_TERM);
+			if (termStatus != SUCCESS) {
+				BleSpam_logErr("terminate link", termStatus);
+			}
 		}
 		break;
 	}
@@ -968,9 +1331,17 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 		BLE_LOG_INT_STR(0, BLE_LOG_MODULE_APP,
 				"APP : GAP msg: status=%d, opcode=%s\n", 0,
 				"GAP_LINK_TERMINATED_EVENT");
-		// Start advertising since there is room for more connections
-		GapAdv_enable(advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX,
-			      0);
+		// Resume the spam engine now that the link is gone
+		if (spamRunning) {
+			bStatus_t advStatus = GapAdv_enable(
+				advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX,
+				0);
+
+			if ((advStatus != SUCCESS) &&
+			    (advStatus != bleAlreadyInRequestedMode)) {
+				BleSpam_logErr("adv re-enable", advStatus);
+			}
+		}
 
 		break;
 	}
@@ -1148,6 +1519,12 @@ static void BleSpam_clockHandler(UArg arg)
 
 		// Post event to wake up the application
 		BleSpam_enqueueMsg(SPAM_PERIODIC_EVT, NULL);
+	} else if (pData->event == SPAM_CYCLE_EVT) {
+		// Post the cycle to the app queue; when the queue is
+		// full, rearm the clock directly so no cycle is lost
+		if (BleSpam_enqueueMsg(SPAM_CYCLE_EVT, NULL) != SUCCESS) {
+			Util_startClock(&clkSpamCycle);
+		}
 	} else if (pData->event == SPAM_SEND_PARAM_UPDATE_EVT) {
 		// Send message to app
 		BleSpam_enqueueMsg(SPAM_SEND_PARAM_UPDATE_EVT, pData);
@@ -1238,13 +1615,27 @@ static void BleSpam_processAdvEvent(spamGapAdvEventData_t *pEventData)
 		// Display_printf(dispHandle, SPAM_ROW_ADVSTATE, 0, "Adv Set %d
 		// disabled after conn %d", advSetTerm->handle,
 		// advSetTerm->connHandle );
+		(void)advSetTerm;
 #endif
+		// The set stopped: re-enable it when no link is active
+		// (implicit one-cycle backoff, task 6)
+		if (spamRunning && (linkDB_NumActive() == 0)) {
+			bStatus_t advStatus = GapAdv_enable(
+				advHandleLegacy, GAP_ADV_ENABLE_OPTIONS_USE_MAX,
+				0);
+
+			if ((advStatus != SUCCESS) &&
+			    (advStatus != bleAlreadyInRequestedMode)) {
+				BleSpam_logErr("adv re-enable", advStatus);
+			}
+		}
 	} break;
 
 	case GAP_EVT_SCAN_REQ_RECEIVED:
 		break;
 
 	case GAP_EVT_INSUFFICIENT_MEMORY:
+		Display_printf(dispHandle, 0, 0, "ERR: adv insuff mem");
 		break;
 
 	default:
