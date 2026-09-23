@@ -1,0 +1,202 @@
+# Build de los firmwares del CC1352 para ambas generaciones de CatSniffer.
+#
+#   v3 (RP2040 + CC1352P7) -> este repo, CC1352P7/linux-build/
+#   v2 (SAMD21 + CC1352P1) -> rama v1.x/v2.x, CC1352P2/    (ver job cc1352p1)
+#
+# Los artefactos se nombran de forma que catnip los pueda clasificar:
+# modules/firmware/board.py distingue la generacion por el nombre del archivo
+# (_P7_MARKERS / _P1_MARKERS) y por el prefijo del tag de release (v2. / v3.).
+name: CC1352 Firmware CI
+
+on:
+  push:
+    branches: [main, master, v3.x, dev]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_v2:
+        description: "Intentar tambien el build del CC1352P1 (v2)"
+        type: boolean
+        default: false
+
+# Version unica del SDK para el cache y para las rutas de paths.mk.
+env:
+  TI_SDK_VERSION: "8.30.01.01"
+  TI_SDK_DIR: simplelink_cc13xx_cc26xx_sdk_8_30_01_01
+  TI_CGT_VERSION: "3.2.2.LTS"
+
+jobs:
+  # ------------------------------------------------------------------ v3
+  # El unico build que hoy puede correr end-to-end: CC1352P7/linux-build/
+  # tiene Makefiles de Linux. La matriz sale de projects/*.mak.
+  cc1352p7:
+    name: "v3 · CC1352P7 · ${{ matrix.project }}"
+    runs-on: ubuntu-22.04
+    # fail-fast: false para que un firmware roto no oculte el estado de los otros.
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [airtag_scanner, airtag_spoofer, justworks_scanner]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # El compilador (tiarmclang) sí tiene descarga directa: lo instala setup.sh.
+      # El SDK NO: es un .run detras del login de ti.com. Se cachea entre runs y,
+      # la primera vez, se baja de la URL que configures en la variable del repo
+      # TI_SDK_URL (Settings > Secrets and variables > Actions > Variables).
+      - name: Cache TI toolchain
+        id: ti-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ti
+          key: ti-${{ env.TI_SDK_VERSION }}-cgt-${{ env.TI_CGT_VERSION }}
+
+      - name: Install TI SimpleLink SDK
+        if: steps.ti-cache.outputs.cache-hit != 'true'
+        env:
+          TI_SDK_URL: ${{ vars.TI_SDK_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TI_SDK_URL}" ]]; then
+            echo "::error::Falta la variable TI_SDK_URL del repositorio."
+            echo "El SDK simplelink_cc13xx_cc26xx_sdk ${TI_SDK_VERSION} no tiene"
+            echo "descarga anonima. Sube el instalador .run a un almacenamiento"
+            echo "propio y pon su URL en TI_SDK_URL, o usa un runner self-hosted"
+            echo "que ya lo tenga en ~/ti."
+            exit 1
+          fi
+          curl -fL --retry 3 -o /tmp/sdk.run "${TI_SDK_URL}"
+          chmod +x /tmp/sdk.run
+          # El instalador anida un subdirectorio con el nombre del producto,
+          # exactamente como espera paths.mk.
+          /tmp/sdk.run --mode unattended --prefix "${HOME}/ti/${TI_SDK_DIR}"
+
+      # setup.sh es idempotente y verifica SDK + SysConfig + tiarmclang.
+      # Instala tiarmclang si falta; si falta el SDK, sale distinto de 0.
+      - name: Install compiler and verify toolchain
+        run: CC1352P7/linux-build/setup.sh
+
+      - name: Build ${{ matrix.project }}
+        run: make -C CC1352P7/linux-build ${{ matrix.project }}
+
+      # El .hex ya sale con el nombre que catnip reconoce como P7
+      # (airtag_scanner_CC1352P_7.hex -> marker "cc1352p_7").
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p ci-artifacts
+          cp CC1352P7/linux-build/out/${{ matrix.project }}/*.hex ci-artifacts/
+          cp CC1352P7/linux-build/out/${{ matrix.project }}/*.map ci-artifacts/ || true
+          ls -l ci-artifacts/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cc1352p7-${{ matrix.project }}
+          path: ci-artifacts/
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ v2
+  # Este job NO compila todavia: las fuentes del CC1352P1 estan en la rama
+  # v1.x/v2.x bajo CC1352P2/ y solo traen proyectos de CCS/IAR para Windows
+  # (SHELL = cmd.exe, rutas C:/ti/...). Falta el equivalente a linux-build/.
+  # Se deja cableado y explicito para que el dia que exista ese Makefile
+  # baste con quitar el `if` y apuntar el `make`.
+  cc1352p1:
+    name: "v2 · CC1352P1"
+    runs-on: ubuntu-22.04
+    if: inputs.build_v2
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [airtag_scanner_CC1352P_2, airtag_spoofer_CC1352P_2_LAUNCHXL_tirtos7_ticlang]
+
+    steps:
+      # Las fuentes v2 viven en otra rama, no en la que dispara el workflow.
+      - uses: actions/checkout@v4
+        with:
+          ref: v1.x/v2.x
+
+      - name: Cache TI toolchain
+        id: ti-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ti
+          key: ti-${{ env.TI_SDK_VERSION }}-cgt-${{ env.TI_CGT_VERSION }}
+
+      - name: Not yet buildable on Linux
+        run: |
+          echo "::error::CC1352P2/${{ matrix.project }} no tiene build de Linux."
+          echo "Portar CC1352P7/linux-build/ a la rama v1.x/v2.x:"
+          echo "  - projects/<nombre>.mak con PROJECT_DIR/TARGET_NAME/SYSCFG_FILE"
+          echo "  - SDK_EX apuntando a examples/rtos/LP_CC1352P1_... (no P7)"
+          echo "  - TARGET_NAME debe contener 'cc1352p1': los directorios actuales"
+          echo "    se llaman CC1352P_2 y catnip no los clasifica (ni P1 ni P7)."
+          exit 1
+
+  # -------------------------------------------------------------- reporte
+  # Corre siempre, resume que compilo y que no, y falla si algo fallo.
+  report:
+    name: Build report
+    runs-on: ubuntu-22.04
+    needs: [cc1352p7, cc1352p1]
+    if: always()
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+        continue-on-error: true
+
+      # board_release.json con la forma que espera catnip, pero con las dos
+      # generaciones. tools/get_hex_files.py hoy solo emite "board_v3".
+      # OJO: catnip declara BOARD_V2.ships_cc1352_hex_assets = False, asi que
+      # publicar hex de v2 cambia un invariante suyo y hay que tocarlo alli.
+      - name: Write board_release.json
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib
+          root = pathlib.Path("artifacts")
+          hexes = sorted(p.name for p in root.rglob("*.hex")) if root.exists() else []
+          p1 = ("cc1352p1", "cc1352p_1", "cc2652p1", "_p1")
+          p7 = ("cc1352p7", "cc1352p_7", "p7_1", "_p7")
+          out = {
+              "board_v2": [h for h in hexes if any(m in h.lower() for m in p1)],
+              "board_v3": [h for h in hexes if any(m in h.lower() for m in p7)],
+          }
+          unclassified = [h for h in hexes
+                          if h not in out["board_v2"] + out["board_v3"]]
+          if unclassified:
+              print("::warning::catnip no puede clasificar: " + ", ".join(unclassified))
+          pathlib.Path("board_release.json").write_text(json.dumps(out, indent=4))
+          print(json.dumps(out, indent=4))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: board_release
+          path: board_release.json
+
+      - name: Summary
+        run: |
+          {
+            echo "## CC1352 build report"
+            echo ""
+            echo "| Generacion | MCU | Resultado |"
+            echo "|---|---|---|"
+            echo "| v3 | CC1352P7 | \`${{ needs.cc1352p7.result }}\` |"
+            echo "| v2 | CC1352P1 | \`${{ needs.cc1352p1.result }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 'skipped' es aceptable (v2 desactivado); 'failure' no.
+      - name: Fail if any build failed
+        run: |
+          failed=""
+          if [[ "${{ needs.cc1352p7.result }}" == "failure" ]]; then failed="$failed CC1352P7(v3)"; fi
+          if [[ "${{ needs.cc1352p1.result }}" == "failure" ]]; then failed="$failed CC1352P1(v2)"; fi
+          if [[ -n "$failed" ]]; then
+            echo "::error::Fallaron:$failed"
+            exit 1
+          fi
+          echo "Sin fallos."
