@@ -65,7 +65,6 @@
 
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/TRNG.h>
-#include <ti/drivers/utils/List.h>
 
 #include <icall.h>
 #include "util.h"
@@ -81,7 +80,6 @@
 #endif // USE_RCOSC
 
 #include <ti_drivers_config.h>
-#include <board_key.h>
 
 #include <ble_spam.h>
 #include "ti_ble_config.h"
@@ -104,9 +102,6 @@
 /*********************************************************************
  * CONSTANTS
  */
-// How often to perform periodic event (in ms)
-#define SPAM_PERIODIC_EVT_PERIOD 5000
-
 // Spam engine cycle instrumentation
 #define SPAM_CYCLE_EVT_PERIOD 250 // Payload cycle period (ms)
 #define SPAM_MAC_ROTATE_CYCLES 8  // Cycles between MAC rotations
@@ -149,27 +144,9 @@
 // Size of string-converted device address ("0xXXXXXXXXXXXX")
 #define SPAM_ADDR_STR_SIZE 15
 
-// For storing the active connections
-#define SPAM_RSSI_TRACK_CHNLS 1 // Max possible channels can be GAP_BONDINGS_MAX
-#define SPAM_MAX_RSSI_STORE_DEPTH 5
-#define SPAM_INVALID_HANDLE 0xFFFF
-#define RSSI_2M_THRSHLD -30
-#define RSSI_1M_THRSHLD -40
-#define RSSI_S2_THRSHLD -50
-#define RSSI_S8_THRSHLD -60
-#define SPAM_PHY_NONE LL_PHY_NONE // No PHY set
-#define AUTO_PHY_UPDATE 0xFF
-
 /*********************************************************************
  * TYPEDEFS
  */
-
-// Auto connect availble groups
-enum {
-	AUTOCONNECT_DISABLE = 0, // Disable
-	AUTOCONNECT_GROUP_A = 1, // Group A
-	AUTOCONNECT_GROUP_B = 2	 // Group B
-};
 
 // App event passed from stack modules. This type is defined by the application
 // since it can queue events to itself however it wants.
@@ -212,27 +189,6 @@ typedef struct {
 	uint8_t event; //
 	uint8_t data[];
 } spamClockEventData_t;
-
-// List element for parameter update and PHY command status lists
-typedef struct {
-	List_Elem elem;
-	uint16_t connHandle;
-} spamConnHandleEntry_t;
-
-// Connected device information
-typedef struct {
-	uint16_t connHandle; // Connection Handle
-	spamClockEventData_t *pParamUpdateEventData;
-	Clock_Struct *pUpdateClock; // pointer to clock struct
-	int8_t rssiArr[SPAM_MAX_RSSI_STORE_DEPTH];
-	uint8_t rssiCntr;
-	int8_t rssiAvg;
-	bool phyCngRq; // Set to true if PHY change request is in progress
-	uint8_t currPhy;
-	uint8_t rqPhy;
-	uint8_t phyRqFailCnt; // PHY change request count
-	bool isAutoPHYEnable; // Flag to indicate auto phy change
-} spamConnRec_t;
 
 /*********************************************************************
  * GLOBAL VARIABLES
@@ -294,30 +250,11 @@ static ICall_SyncHandle syncEvent;
 static Queue_Struct appMsgQueue;
 static Queue_Handle appMsgQueueHandle;
 
-// Clock instance for internal periodic events. Only one is needed since
-// GattServApp will handle notifying all connected GATT clients
-static Clock_Struct clkPeriodic;
-
-// Memory to pass periodic event ID to clock handler
-spamClockEventData_t argPeriodic = { .event = SPAM_PERIODIC_EVT };
-
 // One-shot clock for the spam payload cycle
 static Clock_Struct clkSpamCycle;
 
 // Memory to pass the spam cycle event ID to the clock handler
 spamClockEventData_t argSpamCycle = { .event = SPAM_CYCLE_EVT };
-
-// Per-handle connection info
-static spamConnRec_t connList[MAX_NUM_BLE_CONNS];
-
-// List to store connection handles for set phy command status's
-static List_List setPhyCommStatList;
-
-// List to store connection handles for queued param updates
-static List_List paramUpdateList;
-
-// Auto connect Disabled/Enabled {0 - Disabled, 1- Group A , 2-Group B, ...}
-uint8_t autoConnect = AUTOCONNECT_DISABLE;
 
 // Advertising handles
 static uint8 advHandleLegacy;
@@ -350,7 +287,6 @@ static void BleSpam_advCallback(uint32_t event, void *pBuf, uintptr_t arg);
 static void BleSpam_processAdvEvent(spamGapAdvEventData_t *pEventData);
 static void BleSpam_processAppMsg(spamEvt_t *pMsg);
 static void BleSpam_processCharValueChangeEvt(uint8_t paramId);
-static void BleSpam_performPeriodicTask(void);
 static void BleSpam_clockHandler(UArg arg);
 static void BleSpam_passcodeCb(uint8_t *pDeviceAddr, uint16_t connHandle,
 			       uint8_t uiInputs, uint8_t uiOutputs,
@@ -361,22 +297,6 @@ static void BleSpam_processPairState(spamPairStateData_t *pPairState);
 static void BleSpam_processPasscode(spamPasscodeData_t *pPasscodeData);
 static void BleSpam_charValueChangeCB(uint8_t paramId);
 static status_t BleSpam_enqueueMsg(uint8_t event, void *pData);
-static void BleSpam_keyChangeHandler(uint8 keys);
-static void BleSpam_handleKeys(uint8_t keys);
-static void BleSpam_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg);
-static void BleSpam_initPHYRSSIArray(void);
-static void BleSpam_updatePHYStat(uint16_t eventCode, uint8_t *pMsg);
-static uint8_t BleSpam_addConn(uint16_t connHandle);
-static uint8_t BleSpam_getConnIndex(uint16_t connHandle);
-static uint8_t BleSpam_removeConn(uint16_t connHandle);
-static void BleSpam_processParamUpdate(uint16_t connHandle);
-static status_t BleSpam_startAutoPhyChange(uint16_t connHandle);
-static status_t BleSpam_stopAutoPhyChange(uint16_t connHandle);
-static status_t BleSpam_setPhy(uint16_t connHandle, uint8_t allPhys,
-			       uint8_t txPhy, uint8_t rxPhy, uint16_t phyOpts);
-static uint8_t BleSpam_clearConnListEntry(uint16_t connHandle);
-static void BleSpam_connEvtCB(Gap_ConnEventRpt_t *pReport);
-static void BleSpam_processConnEvt(Gap_ConnEventRpt_t *pReport);
 static void BleSpam_initRandom(void);
 static void BleSpam_processSpamCycle(void);
 static void BleSpam_swapPayload(const spam_model_t *pModel, bool rotateAddr);
@@ -949,11 +869,6 @@ static void BleSpam_init(void)
 			    SPAM_CYCLE_EVT_PERIOD, 0, false,
 			    (UArg)&argSpamCycle);
 
-	// Create one-shot clock for internal periodic events.
-	Util_constructClock(&clkPeriodic, BleSpam_clockHandler,
-			    SPAM_PERIODIC_EVT_PERIOD, 0, false,
-			    (UArg)&argPeriodic);
-
 	// Set the Device Name characteristic in the GAP GATT Service
 	// For more information, see the section in the User's Guide:
 	// http://software-dl.ti.com/lprf/ble5stack-latest/
@@ -1038,9 +953,6 @@ static void BleSpam_init(void)
 	// Initialize GATT Client
 	GATT_InitClient();
 
-	// Initialize Connection List
-	BleSpam_clearConnListEntry(LINKDB_CONNHANDLE_ALL);
-
 	// Source address: seed the model PRNG and the rotating static
 	// random address from the TRNG (fixed fallback on error)
 	spam_models_init();
@@ -1054,9 +966,6 @@ static void BleSpam_init(void)
 	// events
 	GAP_DeviceInit(GAP_PROFILE_PERIPHERAL, selfEntity, addrMode,
 		       pDevRandAddr);
-
-	// Initialize array to store connection handle and RSSI values
-	BleSpam_initPHYRSSIArray();
 
 	// Open the console UART directly (the same UART the Display module
 	// maps) so we can both print status and receive single-line commands.
@@ -1083,10 +992,8 @@ static void BleSpam_init(void)
 		BleSpam_log("ERR: TRNG unavailable, fixed seed used");
 	}
 
-	// The CatSniffer v3 has no user buttons; board_key.c is still wired for
-	// LaunchPad builds but never fires here. Runtime control is over UART
+	// The CatSniffer v3 has no user buttons: runtime control is over UART
 	// (see BleSpam_handleCommand): "help" lists the commands.
-	Board_initKeys(BleSpam_keyChangeHandler);
 	BleSpam_log("SPAM: UART control ready (type 'help')");
 }
 
@@ -1194,88 +1101,12 @@ static uint8_t BleSpam_processStackMsg(ICall_Hdr *pMsg)
 		break;
 
 	case HCI_GAP_EVENT_EVENT: {
-		// Process HCI message
-		switch (pMsg->status) {
-		case HCI_COMMAND_COMPLETE_EVENT_CODE:
-			// Process HCI Command Complete Events here
-			{
-				BleSpam_processCmdCompleteEvt(
-					(hciEvt_CmdComplete_t *)pMsg);
-				break;
-			}
-
-		case HCI_BLE_HARDWARE_ERROR_EVENT_CODE:
+		// Process HCI message. The spam engine terminates every
+		// incoming link immediately, so there is no PHY/RSSI or
+		// command-status handling to do; only the hardware error is
+		// meaningful.
+		if (pMsg->status == HCI_BLE_HARDWARE_ERROR_EVENT_CODE) {
 			AssertHandler(HAL_ASSERT_CAUSE_HARDWARE_ERROR, 0);
-			break;
-
-		// HCI Commands Events
-		case HCI_COMMAND_STATUS_EVENT_CODE: {
-			hciEvt_CommandStatus_t *pMyMsg =
-				(hciEvt_CommandStatus_t *)pMsg;
-			switch (pMyMsg->cmdOpcode) {
-			case HCI_LE_SET_PHY: {
-				if (pMyMsg->cmdStatus ==
-				    HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE) {
-					// Display_printf(dispHandle,
-					// SPAM_ROW_STATUS_1, 0,"PHY Change
-					// failure, peer does not support
-					// this");
-				} else {
-					// Display_printf(dispHandle,
-					// SPAM_ROW_STATUS_1, 0,"PHY Update
-					// Status Event:
-					// 0x%x",pMyMsg->cmdStatus);
-				}
-
-				BleSpam_updatePHYStat(HCI_LE_SET_PHY,
-						      (uint8_t *)pMsg);
-				break;
-			}
-
-			default:
-				break;
-			}
-			break;
-		}
-
-		// LE Events
-		case HCI_LE_EVENT_CODE: {
-			hciEvt_BLEPhyUpdateComplete_t *pPUC =
-				(hciEvt_BLEPhyUpdateComplete_t *)pMsg;
-
-			// A Phy Update Has Completed or Failed
-			if (pPUC->BLEEventCode ==
-			    HCI_BLE_PHY_UPDATE_COMPLETE_EVENT) {
-				if (pPUC->status != SUCCESS) {
-					// Display_printf(dispHandle,
-					// SPAM_ROW_STATUS_1, 0,"PHY Change
-					// failure");
-				} else {
-					// Only symmetrical PHY is supported.
-					// rxPhy should be equal to txPhy.
-					// Display_printf(dispHandle,
-					// SPAM_ROW_STATUS_2, 0,
-					//   "PHY Updated to %s",
-					//    (pPUC->rxPhy ==
-					//    PHY_UPDATE_COMPLETE_EVENT_1M) ?
-					//    "1M" :
-					//   (pPUC->rxPhy ==
-					//   PHY_UPDATE_COMPLETE_EVENT_2M) ?
-					//   "2M" :
-					//  (pPUC->rxPhy ==
-					//  PHY_UPDATE_COMPLETE_EVENT_CODED) ?
-					//  "CODED" : "Unexpected PHY Value");
-				}
-
-				BleSpam_updatePHYStat(
-					HCI_BLE_PHY_UPDATE_COMPLETE_EVENT,
-					(uint8_t *)pMsg);
-			}
-			break;
-		}
-
-		default:
-			break;
 		}
 
 		break;
@@ -1331,8 +1162,6 @@ static uint8_t BleSpam_processGATTMsg(gattMsgEvent_t *pMsg)
  */
 static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 {
-	bool dealloc = TRUE;
-
 	if (pMsg->event <= APP_EVT_EVENT_MAX) {
 		BLE_LOG_INT_STR(0, BLE_LOG_MODULE_APP,
 				"APP : App msg status=%d, event=%s\n", 0,
@@ -1346,10 +1175,6 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 	switch (pMsg->event) {
 	case SPAM_CHAR_CHANGE_EVT:
 		BleSpam_processCharValueChangeEvt(*(uint8_t *)(pMsg->pData));
-		break;
-
-	case SPAM_KEY_CHANGE_EVT:
-		BleSpam_handleKeys(*(uint8_t *)(pMsg->pData));
 		break;
 
 	case SPAM_UART_CMD_EVT:
@@ -1374,26 +1199,6 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 		BleSpam_processPasscode((spamPasscodeData_t *)(pMsg->pData));
 		break;
 
-	case SPAM_PERIODIC_EVT:
-		BleSpam_performPeriodicTask();
-		break;
-
-	case SPAM_SEND_PARAM_UPDATE_EVT: {
-		// Extract connection handle from data
-		uint16_t connHandle = *(
-			uint16_t *)(((spamClockEventData_t *)pMsg->pData)->data);
-
-		BleSpam_processParamUpdate(connHandle);
-
-		// This data is not dynamically allocated
-		dealloc = FALSE;
-		break;
-	}
-
-	case SPAM_CONN_EVT:
-		BleSpam_processConnEvt((Gap_ConnEventRpt_t *)(pMsg->pData));
-		break;
-
 	case SPAM_CYCLE_EVT:
 		BleSpam_processSpamCycle();
 		break;
@@ -1403,8 +1208,8 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 		break;
 	}
 
-	// Free message data if it exists and we are to dealloc
-	if ((dealloc == TRUE) && (pMsg->pData != NULL)) {
+	// Free message data if it exists
+	if (pMsg->pData != NULL) {
 		ICall_free(pMsg->pData);
 	}
 }
@@ -1484,13 +1289,19 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 			}
 			BLESPAM_ASSERT(status == SUCCESS);
 
-			// Only the scan response is loaded here: the first
-			// advertising payload is loaded by BleSpam_start()
+			// Empty scan response, matching the reference
+			// implementation (ADV_TYPE_IND without scan response
+			// data): the set is scannable but returns no extra
+			// bytes, so the only radiated data is the spam model
+			// payload loaded by BleSpam_start(). Loading a
+			// non-empty scanResData1 here would leak the TI device
+			// name into SCAN_RSP and diverge from the reference.
 			status = GapAdv_loadByHandle(advHandleLegacy,
 						     GAP_ADV_DATA_TYPE_SCAN_RSP,
-						     sizeof(scanResData1),
-						     scanResData1);
-			BLESPAM_ASSERT(status == SUCCESS);
+						     0, NULL);
+			if (status != SUCCESS) {
+				BleSpam_logErr("scan rsp load", status);
+			}
 
 			// Set event mask for set #1
 			status = GapAdv_setEventMask(
@@ -1517,12 +1328,6 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 		if (pPkt->hdr.status == SUCCESS) {
 			bStatus_t termStatus;
 
-			// Add connection to list and start RSSI
-			BleSpam_addConn(pPkt->connectionHandle);
-
-			// Start Periodic Clock.
-			Util_startClock(&clkPeriodic);
-
 			// Spam does not serve connections: terminate the
 			// incoming link immediately (D8 reason code)
 			termStatus = GAP_TerminateLinkReq(
@@ -1536,21 +1341,6 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 	}
 
 	case GAP_LINK_TERMINATED_EVENT: {
-		gapTerminateLinkEvent_t *pPkt = (gapTerminateLinkEvent_t *)pMsg;
-
-		// Display the amount of current connections
-		uint8_t numActive = linkDB_NumActive();
-
-		// Remove the connection from the list and disable RSSI if
-		// needed
-		BleSpam_removeConn(pPkt->connectionHandle);
-
-		// If no active connections
-		if (numActive == 0) {
-			// Stop periodic clock
-			Util_stopClock(&clkPeriodic);
-		}
-
 		BLE_LOG_INT_STR(0, BLE_LOG_MODULE_APP,
 				"APP : GAP msg: status=%d, opcode=%s\n", 0,
 				"GAP_LINK_TERMINATED_EVENT");
@@ -1596,39 +1386,6 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 
 		break;
 	}
-
-	case GAP_LINK_PARAM_UPDATE_EVENT: {
-		gapLinkUpdateEvent_t *pPkt = (gapLinkUpdateEvent_t *)pMsg;
-
-		// Get the address from the connection handle
-		linkDBInfo_t linkInfo;
-		linkDB_GetInfo(pPkt->connectionHandle, &linkInfo);
-
-		// Check if there are any queued parameter updates
-		spamConnHandleEntry_t *connHandleEntry =
-			(spamConnHandleEntry_t *)List_get(&paramUpdateList);
-		if (connHandleEntry != NULL) {
-			// Attempt to send queued update now
-			BleSpam_processParamUpdate(connHandleEntry->connHandle);
-
-			// Free list element
-			ICall_free(connHandleEntry);
-		}
-
-		break;
-	}
-
-#if defined(NOTIFY_PARAM_UPDATE_RJCT)
-	case GAP_LINK_PARAM_UPDATE_REJECT_EVENT: {
-		linkDBInfo_t linkInfo;
-		gapLinkUpdateEvent_t *pPkt = (gapLinkUpdateEvent_t *)pMsg;
-
-		// Get the address from the connection handle
-		linkDB_GetInfo(pPkt->connectionHandle, &linkInfo);
-
-		break;
-	}
-#endif
 
 	default:
 
@@ -1694,39 +1451,10 @@ static void BleSpam_processCharValueChangeEvt(uint8_t paramId)
 }
 
 /*********************************************************************
- * @fn      BleSpam_performPeriodicTask
- *
- * @brief   Perform a periodic application task. This function gets called
- *          every five seconds (SPAM_PERIODIC_EVT_PERIOD). In this example,
- *          the value of the third characteristic in the SimpleGATTProfile
- *          service is retrieved from the profile, and then copied into the
- *          value of the the fourth characteristic.
- *
- * @param   None.
- *
- * @return  None.
- */
-static void BleSpam_performPeriodicTask(void)
-{
-	uint8_t valueToCopy;
-
-	// Call to retrieve the value of the third characteristic in the profile
-	if (SimpleProfile_GetParameter(SIMPLEPROFILE_CHAR3, &valueToCopy) ==
-	    SUCCESS) {
-		// Call to set that value of the fourth characteristic in the
-		// profile. Note that if notifications of the fourth
-		// characteristic have been enabled by a GATT client device,
-		// then a notification will be sent every time this function is
-		// called.
-		SimpleProfile_SetParameter(SIMPLEPROFILE_CHAR4, sizeof(uint8_t),
-					   &valueToCopy);
-	}
-}
-
-/*********************************************************************
  * @fn      BleSpam_clockHandler
  *
- * @brief   Handler function for clock timeouts.
+ * @brief   Handler function for clock timeouts. Only the spam payload
+ *          cycle uses a clock in this application.
  *
  * @param   arg - event type
  *
@@ -1736,82 +1464,11 @@ static void BleSpam_clockHandler(UArg arg)
 {
 	spamClockEventData_t *pData = (spamClockEventData_t *)arg;
 
-	if (pData->event == SPAM_PERIODIC_EVT) {
-		// Start the next period
-		Util_startClock(&clkPeriodic);
-
-		// Post event to wake up the application
-		BleSpam_enqueueMsg(SPAM_PERIODIC_EVT, NULL);
-	} else if (pData->event == SPAM_CYCLE_EVT) {
+	if (pData->event == SPAM_CYCLE_EVT) {
 		// Post the cycle to the app queue; when the queue is
 		// full, rearm the clock directly so no cycle is lost
 		if (BleSpam_enqueueMsg(SPAM_CYCLE_EVT, NULL) != SUCCESS) {
 			Util_startClock(&clkSpamCycle);
-		}
-	} else if (pData->event == SPAM_SEND_PARAM_UPDATE_EVT) {
-		// Send message to app
-		BleSpam_enqueueMsg(SPAM_SEND_PARAM_UPDATE_EVT, pData);
-	}
-}
-
-/*********************************************************************
- * @fn      BleSpam_handleKeys
- *
- * @brief   Act on a debounced button press (task context).
- *          BTN-1 (KEY_LEFT) toggles the spam engine on/off.
- *          BTN-2 (KEY_RIGHT) cycles the mode
- *          ALL -> APPLE -> ANDROID -> WINDOWS -> SAMSUNG -> ALL.
- *
- * @param   keys - bitmap of pressed keys (KEY_LEFT / KEY_RIGHT)
- *
- * @return  none
- */
-static void BleSpam_handleKeys(uint8_t keys)
-{
-	if (keys & KEY_LEFT) {
-		if (BleSpam_is_running()) {
-			BleSpam_stop();
-			BleSpam_log("SPAM: stopped");
-		} else {
-			BleSpam_start(spamMode);
-		}
-	}
-
-	if (keys & KEY_RIGHT) {
-		bt_spam_mode_t next =
-			(bt_spam_mode_t)((spamMode + 1) % BT_SPAM_MODE_MAX);
-
-		BleSpam_log("SPAM: mode -> %s", spam_models_mode_name(next));
-
-		if (BleSpam_is_running()) {
-			// Restart the cycle on the new mode's model list
-			BleSpam_start(next);
-		} else {
-			spamMode = next;
-			spam_models_rebuild_active(spamMode);
-		}
-	}
-}
-
-/*********************************************************************
- * @fn      BleSpam_keyChangeHandler
- *
- * @brief   Key event handler function
- *
- * @param   keys - bitmap of pressed keys
- *
- * @return  none
- */
-static void BleSpam_keyChangeHandler(uint8_t keys)
-{
-	uint8_t *pValue = ICall_malloc(sizeof(uint8_t));
-
-	if (pValue) {
-		*pValue = keys;
-
-		if (BleSpam_enqueueMsg(SPAM_KEY_CHANGE_EVT, pValue) !=
-		    SUCCESS) {
-			ICall_free(pValue);
 		}
 	}
 }
@@ -2039,46 +1696,6 @@ static void BleSpam_processPasscode(spamPasscodeData_t *pPasscodeData)
 }
 
 /*********************************************************************
- * @fn      BleSpam_connEvtCB
- *
- * @brief   Connection event callback.
- *
- * @param pReport pointer to connection event report
- */
-static void BleSpam_connEvtCB(Gap_ConnEventRpt_t *pReport)
-{
-	// Enqueue the event for processing in the app context.
-	if (BleSpam_enqueueMsg(SPAM_CONN_EVT, pReport) != SUCCESS) {
-		ICall_free(pReport);
-	}
-}
-
-/*********************************************************************
- * @fn      BleSpam_processConnEvt
- *
- * @brief   Process connection event.
- *
- * @param pReport pointer to connection event report
- */
-static void BleSpam_processConnEvt(Gap_ConnEventRpt_t *pReport)
-{
-	// Get index from handle
-	uint8_t connIndex = BleSpam_getConnIndex(pReport->handle);
-
-	if (connIndex >= MAX_NUM_BLE_CONNS) {
-		// Display_printf(dispHandle, SPAM_ROW_STATUS_1, 0, "Connection
-		// handle is not in the connList !!!");
-		return;
-	}
-
-	// If auto phy change is enabled
-	if (connList[connIndex].isAutoPHYEnable == TRUE) {
-		// Read the RSSI
-		HCI_ReadRssiCmd(pReport->handle);
-	}
-}
-
-/*********************************************************************
  * @fn      BleSpam_enqueueMsg
  *
  * @brief   Creates a message and puts the message in RTOS queue.
@@ -2103,601 +1720,6 @@ static status_t BleSpam_enqueueMsg(uint8_t event, void *pData)
 	}
 
 	return (bleMemAllocError);
-}
-
-/*********************************************************************
- * @fn      BleSpam_addConn
- *
- * @brief   Add a device to the connected device list
- *
- * @return  index of the connected device list entry where the new connection
- *          info is put in.
- *          if there is no room, MAX_NUM_BLE_CONNS will be returned.
- */
-static uint8_t BleSpam_addConn(uint16_t connHandle)
-{
-	uint8_t i;
-	uint8_t status = bleNoResources;
-
-	// Try to find an available entry
-	for (i = 0; i < MAX_NUM_BLE_CONNS; i++) {
-		if (connList[i].connHandle == LINKDB_CONNHANDLE_INVALID) {
-			// Found available entry to put a new connection info in
-			connList[i].connHandle = connHandle;
-
-#ifdef DEFAULT_SEND_PARAM_UPDATE_REQ
-			// Allocate data to send through clock handler
-			connList[i].pParamUpdateEventData =
-				ICall_malloc(sizeof(spamClockEventData_t) +
-					     sizeof(uint16_t));
-			if (connList[i].pParamUpdateEventData) {
-				connList[i].pParamUpdateEventData->event =
-					SPAM_SEND_PARAM_UPDATE_EVT;
-				*((uint16_t *)connList[i]
-					  .pParamUpdateEventData->data) =
-					connHandle;
-
-				// Create a clock object and start
-				connList[i].pUpdateClock =
-					(Clock_Struct *)ICall_malloc(
-						sizeof(Clock_Struct));
-
-				if (connList[i].pUpdateClock) {
-					Util_constructClock(
-						connList[i].pUpdateClock,
-						BleSpam_clockHandler,
-						SEND_PARAM_UPDATE_DELAY, 0,
-						true,
-						(UArg)(connList[i]
-							       .pParamUpdateEventData));
-				} else {
-					ICall_free(
-						connList[i]
-							.pParamUpdateEventData);
-				}
-			} else {
-				status = bleMemAllocError;
-			}
-#endif
-
-			// Set default PHY to 1M
-			connList[i].currPhy = HCI_PHY_1_MBPS;
-
-			break;
-		}
-	}
-
-	return status;
-}
-
-/*********************************************************************
- * @fn      BleSpam_getConnIndex
- *
- * @brief   Find index in the connected device list by connHandle
- *
- * @return  the index of the entry that has the given connection handle.
- *          if there is no match, MAX_NUM_BLE_CONNS will be returned.
- */
-static uint8_t BleSpam_getConnIndex(uint16_t connHandle)
-{
-	uint8_t i;
-
-	for (i = 0; i < MAX_NUM_BLE_CONNS; i++) {
-		if (connList[i].connHandle == connHandle) {
-			return i;
-		}
-	}
-
-	return (MAX_NUM_BLE_CONNS);
-}
-
-/*********************************************************************
- * @fn      BleSpam_getConnIndex
- *
- * @brief   Find index in the connected device list by connHandle
- *
- * @return  SUCCESS if connHandle found valid index or bleInvalidRange
- *          if index wasn't found. LINKDB_CONNHANDLE_ALL will always succeed.
- */
-static uint8_t BleSpam_clearConnListEntry(uint16_t connHandle)
-{
-	uint8_t i;
-	// Set to invalid connection index initially
-	uint8_t connIndex = MAX_NUM_BLE_CONNS;
-
-	if (connHandle != LINKDB_CONNHANDLE_ALL) {
-		// Get connection index from handle
-		connIndex = BleSpam_getConnIndex(connHandle);
-		if (connIndex >= MAX_NUM_BLE_CONNS) {
-			return (bleInvalidRange);
-		}
-	}
-
-	// Clear specific handle or all handles
-	for (i = 0; i < MAX_NUM_BLE_CONNS; i++) {
-		if ((connIndex == i) || (connHandle == LINKDB_CONNHANDLE_ALL)) {
-			connList[i].connHandle = LINKDB_CONNHANDLE_INVALID;
-			connList[i].currPhy = 0;
-			connList[i].phyCngRq = 0;
-			connList[i].phyRqFailCnt = 0;
-			connList[i].rqPhy = 0;
-			memset(connList[i].rssiArr, 0,
-			       SPAM_MAX_RSSI_STORE_DEPTH);
-			connList[i].rssiAvg = 0;
-			connList[i].rssiCntr = 0;
-			connList[i].isAutoPHYEnable = FALSE;
-		}
-	}
-
-	return (SUCCESS);
-}
-
-/*********************************************************************
- * @fn      BleSpam_clearPendingParamUpdate
- *
- * @brief   clean pending param update request in the paramUpdateList list
- *
- * @param   connHandle - connection handle to clean
- *
- * @return  none
- */
-void BleSpam_clearPendingParamUpdate(uint16_t connHandle)
-{
-	List_Elem *curr;
-
-	for (curr = List_head(&paramUpdateList); curr != NULL;
-	     curr = List_next(curr)) {
-		if (((spamConnHandleEntry_t *)curr)->connHandle == connHandle) {
-			List_remove(&paramUpdateList, curr);
-		}
-	}
-}
-
-/*********************************************************************
- * @fn      BleSpam_removeConn
- *
- * @brief   Remove a device from the connected device list
- *
- * @return  index of the connected device list entry where the new connection
- *          info is removed from.
- *          if connHandle is not found, MAX_NUM_BLE_CONNS will be returned.
- */
-static uint8_t BleSpam_removeConn(uint16_t connHandle)
-{
-	uint8_t connIndex = BleSpam_getConnIndex(connHandle);
-
-	if (connIndex != MAX_NUM_BLE_CONNS) {
-		Clock_Struct *pUpdateClock = connList[connIndex].pUpdateClock;
-
-		if (pUpdateClock != NULL) {
-			// Stop and destruct the RTOS clock if it's still alive
-			if (Util_isActive(pUpdateClock)) {
-				Util_stopClock(pUpdateClock);
-			}
-
-			// Destruct the clock object
-			Clock_destruct(pUpdateClock);
-			// Free clock struct
-			ICall_free(pUpdateClock);
-			// Free ParamUpdateEventData
-			ICall_free(connList[connIndex].pParamUpdateEventData);
-		}
-		// Clear pending update requests from paramUpdateList
-		BleSpam_clearPendingParamUpdate(connHandle);
-		// Stop Auto PHY Change
-		BleSpam_stopAutoPhyChange(connHandle);
-		// Clear Connection List Entry
-		BleSpam_clearConnListEntry(connHandle);
-	}
-
-	return connIndex;
-}
-
-/*********************************************************************
- * @fn      BleSpam_processParamUpdate
- *
- * @brief   Process a parameters update request
- *
- * @return  None
- */
-static void BleSpam_processParamUpdate(uint16_t connHandle)
-{
-	gapUpdateLinkParamReq_t req;
-	uint8_t connIndex;
-
-	req.connectionHandle = connHandle;
-#ifdef DEFAULT_SEND_PARAM_UPDATE_REQ
-	req.connLatency = DEFAULT_DESIRED_SLAVE_LATENCY;
-	req.connTimeout = DEFAULT_DESIRED_CONN_TIMEOUT;
-	req.intervalMin = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
-	req.intervalMax = DEFAULT_DESIRED_MAX_CONN_INTERVAL;
-#endif
-
-	connIndex = BleSpam_getConnIndex(connHandle);
-	if (connIndex >= MAX_NUM_BLE_CONNS) {
-		// Display_printf(dispHandle, SPAM_ROW_STATUS_1, 0, "Connection
-		// handle is not in the connList !!!");
-		return;
-	}
-
-	// Deconstruct the clock object
-	Clock_destruct(connList[connIndex].pUpdateClock);
-	// Free clock struct, only in case it is not NULL
-	if (connList[connIndex].pUpdateClock != NULL) {
-		ICall_free(connList[connIndex].pUpdateClock);
-		connList[connIndex].pUpdateClock = NULL;
-	}
-	// Free ParamUpdateEventData, only in case it is not NULL
-	if (connList[connIndex].pParamUpdateEventData != NULL)
-		ICall_free(connList[connIndex].pParamUpdateEventData);
-
-	// Send parameter update
-	bStatus_t status = GAP_UpdateLinkParamReq(&req);
-
-	// If there is an ongoing update, queue this for when the udpate
-	// completes
-	if (status == bleAlreadyInRequestedMode) {
-		spamConnHandleEntry_t *connHandleEntry =
-			ICall_malloc(sizeof(spamConnHandleEntry_t));
-		if (connHandleEntry) {
-			connHandleEntry->connHandle = connHandle;
-
-			List_put(&paramUpdateList,
-				 (List_Elem *)connHandleEntry);
-		}
-	}
-}
-
-/*********************************************************************
- * @fn      SimpleCentral_processCmdCompleteEvt
- *
- * @brief   Process an incoming OSAL HCI Command Complete Event.
- *
- * @param   pMsg - message to process
- *
- * @return  none
- */
-static void BleSpam_processCmdCompleteEvt(hciEvt_CmdComplete_t *pMsg)
-{
-	uint8_t status = pMsg->pReturnParam[0];
-
-	// Find which command this command complete is for
-	switch (pMsg->cmdOpcode) {
-	case HCI_READ_RSSI: {
-		int8 rssi = (int8)pMsg->pReturnParam[3];
-
-		// Display RSSI value, if RSSI is higher than threshold, change
-		// to faster PHY
-		if (status == SUCCESS) {
-			uint16_t handle = BUILD_UINT16(pMsg->pReturnParam[1],
-						       pMsg->pReturnParam[2]);
-
-			uint8_t index = BleSpam_getConnIndex(handle);
-			if (index >= MAX_NUM_BLE_CONNS) {
-				// Display_printf(dispHandle, SPAM_ROW_STATUS_1,
-				// 0, "Connection handle is not in the connList
-				// !!!");
-				return;
-			}
-
-			if (rssi != LL_RSSI_NOT_AVAILABLE) {
-				connList[index]
-					.rssiArr[connList[index].rssiCntr++] =
-					rssi;
-				connList[index].rssiCntr %=
-					SPAM_MAX_RSSI_STORE_DEPTH;
-
-				int16_t sum_rssi = 0;
-				for (uint8_t cnt = 0;
-				     cnt < SPAM_MAX_RSSI_STORE_DEPTH; cnt++) {
-					sum_rssi +=
-						connList[index].rssiArr[cnt];
-				}
-				connList[index].rssiAvg =
-					(uint32_t)(sum_rssi /
-						   SPAM_MAX_RSSI_STORE_DEPTH);
-
-				uint8_t phyRq = SPAM_PHY_NONE;
-				uint8_t phyRqS = SPAM_PHY_NONE;
-				uint8_t phyOpt = LL_PHY_OPT_NONE;
-
-				if (connList[index].phyCngRq == FALSE) {
-					if ((connList[index].rssiAvg >=
-					     RSSI_2M_THRSHLD) &&
-					    (connList[index].currPhy !=
-					     HCI_PHY_2_MBPS) &&
-					    (connList[index].currPhy !=
-					     SPAM_PHY_NONE)) {
-						// try to go to higher data rate
-						phyRqS = phyRq = HCI_PHY_2_MBPS;
-					} else if ((connList[index].rssiAvg <
-						    RSSI_2M_THRSHLD) &&
-						   (connList[index].rssiAvg >=
-						    RSSI_1M_THRSHLD) &&
-						   (connList[index].currPhy !=
-						    HCI_PHY_1_MBPS) &&
-						   (connList[index].currPhy !=
-						    SPAM_PHY_NONE)) {
-						// try to go to legacy regular
-						// data rate
-						phyRqS = phyRq = HCI_PHY_1_MBPS;
-					} else if ((connList[index].rssiAvg >=
-						    RSSI_S2_THRSHLD) &&
-						   (connList[index].rssiAvg <
-						    RSSI_1M_THRSHLD) &&
-						   (connList[index].currPhy !=
-						    SPAM_PHY_NONE)) {
-						// try to go to lower data rate
-						// S=2(500kb/s)
-						phyRqS = HCI_PHY_CODED;
-						phyOpt = LL_PHY_OPT_S2;
-						phyRq = BLE5_CODED_S2_PHY;
-					} else if (connList[index].rssiAvg <
-						   RSSI_S2_THRSHLD) {
-						// try to go to lowest data rate
-						// S=8(125kb/s)
-						phyRqS = HCI_PHY_CODED;
-						phyOpt = LL_PHY_OPT_S8;
-						phyRq = BLE5_CODED_S8_PHY;
-					}
-					if ((phyRq != SPAM_PHY_NONE) &&
-					    // First check if the request for
-					    // this phy change is already not
-					    // honored then don't request for
-					    // change
-					    (((connList[index].rqPhy == phyRq) &&
-					      (connList[index].phyRqFailCnt <
-					       2)) ||
-					     (connList[index].rqPhy != phyRq))) {
-						// Initiate PHY change based on
-						// RSSI
-						BleSpam_setPhy(
-							connList[index]
-								.connHandle,
-							0, phyRqS, phyRqS,
-							phyOpt);
-						connList[index].phyCngRq = TRUE;
-
-						// If it a request for different
-						// phy than failed request,
-						// reset the count
-						if (connList[index].rqPhy !=
-						    phyRq) {
-							// then reset the
-							// request phy counter
-							// and requested phy
-							connList[index]
-								.phyRqFailCnt =
-								0;
-						}
-
-						if (phyOpt == LL_PHY_OPT_NONE) {
-							connList[index].rqPhy =
-								phyRq;
-						} else if (phyOpt ==
-							   LL_PHY_OPT_S2) {
-							connList[index].rqPhy =
-								BLE5_CODED_S2_PHY;
-						} else {
-							connList[index].rqPhy =
-								BLE5_CODED_S8_PHY;
-						}
-
-					} // end of if ((phyRq != SPAM_PHY_NONE)
-					  // && ...
-				} // end of if (connList[index].phyCngRq ==
-				  // FALSE)
-			} // end of if (rssi != LL_RSSI_NOT_AVAILABLE)
-
-			// Display_printf(dispHandle, SPAM_ROW_RSSI, 0,
-			//                        "RSSI:%d dBm, AVG RSSI:%d
-			//                        dBm", (uint32_t)(rssi),
-			//                        connList[index].rssiAvg);
-
-		} // end of if (status == SUCCESS)
-		break;
-	}
-
-	case HCI_LE_READ_PHY: {
-		if (status == SUCCESS) {
-			// Display_printf(dispHandle, SPAM_ROW_RSSI + 2, 0,
-			// "RXPh: %d, TXPh: %d",
-			//  pMsg->pReturnParam[3], pMsg->pReturnParam[4]);
-		}
-		break;
-	}
-
-	default:
-		break;
-	} // end of switch (pMsg->cmdOpcode)
-}
-
-/*********************************************************************
- * @fn      BleSpam_initPHYRSSIArray
- *
- * @brief   Initializes the array of structure/s to store data related
- *          RSSI based auto PHy change
- *
- * @param   connHandle - the connection handle
- *
- * @param   addr - pointer to device address
- *
- * @return  index of connection handle
- */
-static void BleSpam_initPHYRSSIArray(void)
-{
-	// Initialize array to store connection handle and RSSI values
-	memset(connList, 0, sizeof(connList));
-	for (uint8_t index = 0; index < MAX_NUM_BLE_CONNS; index++) {
-		connList[index].connHandle = SPAM_INVALID_HANDLE;
-	}
-}
-/*********************************************************************
-      // Set default PHY to 1M
- * @fn      BleSpam_startAutoPhyChange
- *
- * @brief   Start periodic RSSI reads on a link.
- *
- * @param   connHandle - connection handle of link
- * @param   devAddr - device address
- *
- * @return  SUCCESS: Terminate started
- *          bleIncorrectMode: No link
- *          bleNoResources: No resources
- */
-static status_t BleSpam_startAutoPhyChange(uint16_t connHandle)
-{
-	status_t status = FAILURE;
-
-	// Get connection index from handle
-	uint8_t connIndex = BleSpam_getConnIndex(connHandle);
-	BLESPAM_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
-
-	// Start Connection Event notice for RSSI calculation
-	status = Gap_RegisterConnEventCb(BleSpam_connEvtCB, GAP_CB_REGISTER,
-					 GAP_CB_CONN_EVENT_ALL, connHandle);
-
-	// Flag in connection info if successful
-	if (status == SUCCESS) {
-		connList[connIndex].isAutoPHYEnable = TRUE;
-	}
-
-	return status;
-}
-
-/*********************************************************************
- * @fn      BleSpam_stopAutoPhyChange
- *
- * @brief   Cancel periodic RSSI reads on a link.
- *
- * @param   connHandle - connection handle of link
- *
- * @return  SUCCESS: Operation successful
- *          bleIncorrectMode: No link
- */
-static status_t BleSpam_stopAutoPhyChange(uint16_t connHandle)
-{
-	// Get connection index from handle
-	uint8_t connIndex = BleSpam_getConnIndex(connHandle);
-	BLESPAM_ASSERT(connIndex < MAX_NUM_BLE_CONNS);
-
-	// Stop connection event notice
-	Gap_RegisterConnEventCb(NULL, GAP_CB_UNREGISTER, GAP_CB_CONN_EVENT_ALL,
-				connHandle);
-
-	// Also update the phychange request status for active RSSI tracking
-	// connection
-	connList[connIndex].phyCngRq = FALSE;
-	connList[connIndex].isAutoPHYEnable = FALSE;
-
-	return SUCCESS;
-}
-
-/*********************************************************************
- * @fn      BleSpam_setPhy
- *
- * @brief   Call the HCI set phy API and and add the handle to a
- *          list to match it to an incoming command status event
- */
-static status_t BleSpam_setPhy(uint16_t connHandle, uint8_t allPhys,
-			       uint8_t txPhy, uint8_t rxPhy, uint16_t phyOpts)
-{
-	// Allocate list entry to store handle for command status
-	spamConnHandleEntry_t *connHandleEntry =
-		ICall_malloc(sizeof(spamConnHandleEntry_t));
-
-	if (connHandleEntry) {
-		connHandleEntry->connHandle = connHandle;
-
-		// Add entry to the phy command status list
-		List_put(&setPhyCommStatList, (List_Elem *)connHandleEntry);
-
-		// Send PHY Update
-		HCI_LE_SetPhyCmd(connHandle, allPhys, txPhy, rxPhy, phyOpts);
-	}
-
-	return SUCCESS;
-}
-
-/*********************************************************************
- * @fn      BleSpam_updatePHYStat
- *
- * @brief   Update the auto phy update state machine
- *
- * @param   connHandle - the connection handle
- *
- * @return  None
- */
-static void BleSpam_updatePHYStat(uint16_t eventCode, uint8_t *pMsg)
-{
-	uint8_t connIndex;
-
-	switch (eventCode) {
-	case HCI_LE_SET_PHY: {
-		// Get connection handle from list
-		spamConnHandleEntry_t *connHandleEntry =
-			(spamConnHandleEntry_t *)List_get(&setPhyCommStatList);
-
-		if (connHandleEntry) {
-			// Get index from connection handle
-			connIndex = BleSpam_getConnIndex(
-				connHandleEntry->connHandle);
-
-			ICall_free(connHandleEntry);
-
-			// Is this connection still valid?
-			if (connIndex < MAX_NUM_BLE_CONNS) {
-				hciEvt_CommandStatus_t *pMyMsg =
-					(hciEvt_CommandStatus_t *)pMsg;
-
-				if (pMyMsg->cmdStatus ==
-				    HCI_ERROR_CODE_UNSUPPORTED_REMOTE_FEATURE) {
-					// Update the phychange request status
-					// for active RSSI tracking connection
-					connList[connIndex].phyCngRq = FALSE;
-					connList[connIndex].phyRqFailCnt++;
-				}
-			}
-		}
-		break;
-	}
-
-	// LE Event - a Phy update has completed or failed
-	case HCI_BLE_PHY_UPDATE_COMPLETE_EVENT: {
-		hciEvt_BLEPhyUpdateComplete_t *pPUC =
-			(hciEvt_BLEPhyUpdateComplete_t *)pMsg;
-
-		if (pPUC) {
-			// Get index from connection handle
-			connIndex = BleSpam_getConnIndex(pPUC->connHandle);
-
-			// Is this connection still valid?
-			if (connIndex < MAX_NUM_BLE_CONNS) {
-				// Update the phychange request status for
-				// active RSSI tracking connection
-				connList[connIndex].phyCngRq = FALSE;
-
-				if (pPUC->status == SUCCESS) {
-					connList[connIndex].currPhy =
-						pPUC->rxPhy;
-				}
-				if (pPUC->rxPhy != connList[connIndex].rqPhy) {
-					connList[connIndex].phyRqFailCnt++;
-				} else {
-					// Reset the request phy counter and
-					// requested phy
-					connList[connIndex].phyRqFailCnt = 0;
-					connList[connIndex].rqPhy = 0;
-				}
-			}
-		}
-
-		break;
-	}
-
-	default:
-		break;
-	} // end of switch (eventCode)
 }
 
 /*********************************************************************
