@@ -1,0 +1,64 @@
+name: Firmware Version Validation
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      fw_version:
+        description: 'Firmware version to validate (vA.X.Y.Z)'
+        required: true
+        type: string
+
+jobs:
+  validate-tag-version:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      REQUIRED_BOARD_COMPAT: "3"
+      FIRST_RELEASE_VERSION: "v3.1.0.0"
+      MIN_RELEASE_VERSION: "v3.1.0.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag format
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          echo "Validating tag: ${TAG_NAME}"
+          ./scripts/validate_fw_version.sh "${TAG_NAME}" \
+            --require-board "${REQUIRED_BOARD_COMPAT}" \
+            --min-version "${MIN_RELEASE_VERSION}"
+
+      - name: Enforce first release tag
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_COUNT="$(git tag -l 'v*.*.*.*' | wc -l | tr -d ' ')"
+          echo "Detected firmware-like tag count: ${TAG_COUNT}"
+          if [[ "${TAG_COUNT}" == "1" ]]; then
+            echo "First firmware release detected; enforcing ${FIRST_RELEASE_VERSION}"
+            ./scripts/validate_fw_version.sh "${TAG_NAME}" --require-exact "${FIRST_RELEASE_VERSION}"
+          else
+            echo "Not first release; exact first-version enforcement skipped."
+          fi
+
+  validate-manual-version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      REQUIRED_BOARD_COMPAT: "3"
+      MIN_RELEASE_VERSION: "v3.1.0.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate provided version
+        run: |
+          VERSION="${{ github.event.inputs.fw_version }}"
+          echo "Validating manual input: ${VERSION}"
+          ./scripts/validate_fw_version.sh "${VERSION}" \
+            --require-board "${REQUIRED_BOARD_COMPAT}" \
+            --min-version "${MIN_RELEASE_VERSION}"
