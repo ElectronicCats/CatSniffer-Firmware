@@ -246,11 +246,19 @@ Display_Handle dispHandle = NULL;
 // Console UART: status output plus single-line command input. The
 // CatSniffer v3 has no user buttons, so the run mode is driven over UART.
 #define SPAM_CMD_MAXLEN 24
+// Single-producer (RX callback) / single-consumer (task) ring of completed
+// command lines. The host sends several commands back-to-back with no pacing
+// (mode -> start -> status), so the RX path must keep accepting the next line
+// while the task is still handling the previous one. SPAM_CMD_QUEUE_N slots is
+// enough to hold one such burst even while BleSpam_start() is busy.
+#define SPAM_CMD_QUEUE_N 4
 static UART2_Handle uartHandle = NULL;
 static uint8_t spamRxByte;
-static char spamCmdBuf[SPAM_CMD_MAXLEN];
-static volatile uint8_t spamCmdLen = 0;
-static volatile uint8_t spamCmdReady = 0;
+static char spamCmdQ[SPAM_CMD_QUEUE_N][SPAM_CMD_MAXLEN];
+static volatile uint8_t spamQHead = 0; // task advances after consuming a line
+static volatile uint8_t spamQTail = 0; // callback advances after a line
+				       // completes
+static uint8_t spamRxLen = 0;	       // bytes accumulated in the tail slot
 
 // Task configuration
 Task_Struct spamTask;
@@ -568,10 +576,14 @@ static void BleSpam_log(const char *fmt, ...)
 /*********************************************************************
  * @fn      BleSpam_uartReadCb
  *
- * @brief   UART RX callback (may run in HWI/SWI context). Assembles one
- *          command line; on CR/LF it hands the line to the task via
- *          SPAM_UART_CMD_EVT. Bytes are dropped while a completed command
- *          is still pending, and the next single-byte read is re-armed.
+ * @brief   UART RX callback (may run in HWI/SWI context). Accumulates bytes
+ *          straight into the current ring slot; on CR/LF it commits the line
+ *          (advances the tail) and signals the task via SPAM_UART_CMD_EVT, then
+ *          re-arms the next single-byte read. Because it keeps receiving into
+ *          the next slot regardless of whether the task has drained the queue,
+ *          back-to-back commands are no longer lost. A line is dropped only if
+ *          the ring is full (SPAM_CMD_QUEUE_N lines pending) or overruns the
+ *          per-line length cap.
  *
  * @return  None.
  */
@@ -586,15 +598,21 @@ static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
 		char c = (char)spamRxByte;
 
 		if ((c == '\n') || (c == '\r')) {
-			if (!spamCmdReady && (spamCmdLen > 0)) {
-				spamCmdBuf[spamCmdLen] = '\0';
-				spamCmdReady = 1;
-				BleSpam_enqueueMsg(SPAM_UART_CMD_EVT, NULL);
+			if (spamRxLen > 0) {
+				uint8_t next =
+					(spamQTail + 1) % SPAM_CMD_QUEUE_N;
+				// Commit only if the ring has a free slot;
+				// otherwise drop this line and keep the queue.
+				if (next != spamQHead) {
+					spamCmdQ[spamQTail][spamRxLen] = '\0';
+					spamQTail = next;
+					BleSpam_enqueueMsg(SPAM_UART_CMD_EVT,
+							   NULL);
+				}
 			}
-			spamCmdLen = 0;
-		} else if (!spamCmdReady &&
-			   (spamCmdLen < (SPAM_CMD_MAXLEN - 1))) {
-			spamCmdBuf[spamCmdLen++] = c;
+			spamRxLen = 0;
+		} else if (spamRxLen < (SPAM_CMD_MAXLEN - 1)) {
+			spamCmdQ[spamQTail][spamRxLen++] = c;
 		}
 	}
 
@@ -1335,8 +1353,13 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 		break;
 
 	case SPAM_UART_CMD_EVT:
-		BleSpam_handleCommand(spamCmdBuf);
-		spamCmdReady = 0;
+		// Drain every queued line: bursts may enqueue more than one
+		// line before this event runs, and events could otherwise
+		// coalesce.
+		while (spamQHead != spamQTail) {
+			BleSpam_handleCommand(spamCmdQ[spamQHead]);
+			spamQHead = (spamQHead + 1) % SPAM_CMD_QUEUE_N;
+		}
 		break;
 
 	case SPAM_ADV_EVT:
