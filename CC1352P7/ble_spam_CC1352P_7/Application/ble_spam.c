@@ -107,6 +107,7 @@
 #define SPAM_MAC_ROTATE_CYCLES 8  // Cycles between MAC rotations
 #define SPAM_STATS_CYCLES 100	  // Cycles between stats log lines
 #define SPAM_LINK_STALL_CYCLES 4  // Stalled cycles before forcing link term
+#define SPAM_STACK_WARN_PCT 80	  // Stack high-water % that triggers WARN once
 
 // Task configuration
 #define SPAM_TASK_PRIORITY 1
@@ -293,6 +294,8 @@ static bt_spam_mode_t spamMode = BLE_SPAM_DEFAULT_MODE;
 static uint8_t spamActiveIdx;	    // Position in the active model list
 static uint16_t spamCycleCount;	    // Cycles since BleSpam_start()
 static uint8_t spamLinkStallCycles; // Consecutive cycles blocked by a link
+static uint16_t spamStackPeak;	    // Task stack high-water in bytes
+static bool spamStackWarned;	    // One-shot latch for the stack WARN
 static bool spamRotateEveryCycle; // Rotate MAC per cycle (Fase 2, no ephemeral
 				  // payload)
 static spam_model_t spamCurModel; // Stack keeps the pointer after load
@@ -343,6 +346,8 @@ static uint32_t BleSpam_addrRand(void);
 static void BleSpam_logErr(const char *what, bStatus_t status);
 static void BleSpam_logAddr(const char *tag, const uint8_t *addr);
 static void BleSpam_log(const char *fmt, ...);
+static uint16_t BleSpam_sampleStack(void);
+static void BleSpam_logStats(void);
 static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
 			       void *userArg, int_fast16_t status);
 static void BleSpam_handleCommand(const char *cmd);
@@ -553,6 +558,65 @@ static void BleSpam_log(const char *fmt, ...)
 }
 
 /*********************************************************************
+ * @fn      BleSpam_sampleStack
+ *
+ * @brief   Read the spam task's stack high-water mark (peak bytes used)
+ *          via Task_stat, which scans the 0xBE fill pattern the kernel
+ *          lays down when Task.initStackFlag is set. Latches a one-shot
+ *          "WARN: stack low" the first time usage crosses
+ *          SPAM_STACK_WARN_PCT of the allotted stack. Task context only
+ *          (called from the cycle handler and the "stats" command).
+ *
+ * @return  Peak stack usage in bytes.
+ */
+static uint16_t BleSpam_sampleStack(void)
+{
+	Task_Stat stat;
+
+	Task_stat(Task_handle(&spamTask), &stat);
+	spamStackPeak = (uint16_t)stat.used;
+
+	// One-shot alarm: the watermark only grows, so warn once and stay
+	// quiet afterwards instead of repeating every stats line.
+	if (!spamStackWarned &&
+	    ((stat.used * 100u) >= (stat.stackSize * SPAM_STACK_WARN_PCT))) {
+		spamStackWarned = true;
+		BleSpam_log("WARN: stack low %u/%u B (>=%u%%)",
+			    (unsigned)stat.used, (unsigned)stat.stackSize,
+			    (unsigned)SPAM_STACK_WARN_PCT);
+	}
+
+	return spamStackPeak;
+}
+
+/*********************************************************************
+ * @fn      BleSpam_logStats
+ *
+ * @brief   Emit a single resource/telemetry line: cycles, stack
+ *          high-water, engine state, power profile, advertising
+ *          interval and BLE heap (free/total). Shared by the periodic
+ *          SPAM_STATS_CYCLES log and the on-demand "stats" command.
+ *          Task context only.
+ *
+ * @return  None.
+ */
+static void BleSpam_logStats(void)
+{
+	ICall_heapStats_t heap;
+	uint16_t used = BleSpam_sampleStack();
+
+	ICall_getHeapStats(&heap);
+
+	BleSpam_log("STATS: cycles=%u stack=%u/%u run=%u pwr=%s int=%u-%u "
+		    "heap=%u/%u",
+		    (unsigned)spamCycleCount, (unsigned)used,
+		    (unsigned)SPAM_TASK_STACK_SIZE, (unsigned)spamRunning,
+		    spamPowerProfiles[spamPowerProfile].name,
+		    (unsigned)spamIntMin, (unsigned)spamIntMax,
+		    (unsigned)heap.totalFreeSize, (unsigned)heap.totalSize);
+}
+
+/*********************************************************************
  * @fn      BleSpam_uartReadCb
  *
  * @brief   UART RX callback (may run in HWI/SWI context). Accumulates bytes
@@ -705,7 +769,7 @@ static bool BleSpam_parseU16(const char **pp, uint16_t *out)
  * @brief   Parse and act on a completed UART command line (task context).
  *          Replaces the button UX the CatSniffer v3 hardware cannot offer.
  *          Modes: all/apple/android/windows/samsung (or a/p/n/w/s).
- *          Control: start (r), stop (x), status (st), help (?).
+ *          Control: start (r), stop (x), status (st), stats, help (?).
  *          Radio: pwr high|bal|low, int <min> <max> (units of 0.625 ms).
  *
  * @param   cmd - NUL-terminated command word
@@ -810,9 +874,11 @@ static void BleSpam_handleCommand(const char *cmd)
 			BleSpam_log("SPAM: int=%u-%u (x0.625ms)", (unsigned)mn,
 				    (unsigned)mx);
 		}
+	} else if (strcmp(cmd, "stats") == 0) {
+		BleSpam_logStats();
 	} else if ((strcmp(cmd, "help") == 0) || (strcmp(cmd, "?") == 0)) {
 		BleSpam_log("SPAM cmds: all|apple|android|windows|samsung, "
-			    "start, stop, status, pwr high|bal|low, "
+			    "start, stop, status, stats, pwr high|bal|low, "
 			    "int <min> <max>");
 	} else {
 		BleSpam_log("ERR: unknown cmd '%s' (type help)", cmd);
@@ -1058,7 +1124,7 @@ static void BleSpam_processSpamCycle(void)
 		    (unsigned)spam_models_count());
 
 	if ((spamCycleCount % SPAM_STATS_CYCLES) == 0) {
-		BleSpam_log("SPAM: cycles=%u", (unsigned)spamCycleCount);
+		BleSpam_logStats();
 	}
 }
 
