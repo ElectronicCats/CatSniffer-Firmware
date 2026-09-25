@@ -158,18 +158,47 @@ static void test_randomization(void)
 	printf("[random]  re-seed 1234 reproduces the payload "
 	       "deterministically\n");
 
-	/* ANDROID (Fast Pair): no per-type randomization in the reference
-	 * implementation; anti-dedup comes from the rotating MAC (Phase 3).
-	 * Documented as expected behaviour, not a failure. */
+	/* ANDROID (Fast Pair, Phase 2 C6): the discoverable model ID stays
+	 * fixed (device identity) but the advisory TX Power AD value is
+	 * randomized per cycle, so consecutive payloads must now differ while
+	 * the 0xFE2C service data and model ID are preserved. */
 	spam_models_rebuild_active(BT_SPAM_MODE_ANDROID);
 	spam_models_seed(1234u);
 	len_a = spam_models_prepare(0, &a);
 	len_b = spam_models_prepare(0, &b);
 	CHECK(len_a > 0 && len_a == len_b, "Fast Pair lengths differ");
-	CHECK(memcmp(a.data, b.data, len_a) == 0, "Fast Pair payload must be "
-						  "constant (reference "
-						  "behaviour)");
-	printf("[random]  %s: payload constant by design (MAC rotation only)\n",
+	CHECK(memcmp(a.data, b.data, len_a) != 0, "Fast Pair payload must vary "
+						  "per cycle (TX Power byte), "
+						  "got "
+						  "identical payloads");
+	/* Identity bytes must be untouched: service data 0xFE2C (bytes 9-10)
+	 * and the 3-byte model ID (bytes 11-13). Only the last byte (TX Power
+	 * value) may differ. */
+	CHECK(memcmp(a.data, b.data, len_a - 1u) == 0, "Fast Pair changed more "
+						       "than the trailing TX "
+						       "Power byte");
+	CHECK(a.data[9] == 0x2c && a.data[10] == 0xfe, "Fast Pair service data "
+						       "UUID corrupted");
+	printf("[random]  %s: TX Power byte varies, model ID/UUID preserved\n",
+	       a.name);
+
+	/* SAMSUNG (EasySetup): the payload is fully signature-locked (magic
+	 * prefix + model/color ID), so there is no signature-safe ephemeral
+	 * byte (Phase 2 inventory, risk R3). The payload is intentionally
+	 * stable here; anti-dedup is delegated to the engine's per-cycle MAC
+	 * rotation (ble_spam.c, not host-testable). This assertion locks that
+	 * behaviour so an accidental future mutation of a signature byte is
+	 * caught. */
+	spam_models_rebuild_active(BT_SPAM_MODE_SAMSUNG);
+	spam_models_seed(1234u);
+	len_a = spam_models_prepare(0, &a);
+	len_b = spam_models_prepare(0, &b);
+	CHECK(len_a > 0 && len_a == len_b, "Samsung lengths differ");
+	CHECK(memcmp(a.data, b.data, len_a) == 0, "Samsung payload must stay "
+						  "signature-stable "
+						  "(anti-dedup via MAC "
+						  "rotation)");
+	printf("[random]  %s: payload signature-locked (MAC rotation only)\n",
 	       a.name);
 }
 
