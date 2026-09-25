@@ -191,6 +191,28 @@ typedef struct {
 	uint8_t data[];
 } spamClockEventData_t;
 
+// Fase 3: runtime TX power / advertising interval control over UART.
+// Three coupled presets map power to interval; a bare "int <min> <max>" can
+// still override the window without changing the power preset.
+typedef enum {
+	SPAM_PWR_HIGH = 0,
+	SPAM_PWR_BALANCED,
+	SPAM_PWR_LOW,
+	SPAM_PWR_COUNT
+} bt_spam_power_profile_t;
+
+// Per-profile radio settings. txPowerIdx is an HCI_EXT_TX_POWER_* index into
+// the stack TX power table; intMin/intMax are advertising intervals in units of
+// 0.625 ms. SysConfig has rfdesign.pa20 = "none", so the standard PA caps HIGH
+// at +5 dBm (the 20 dBm high-PA steps are not built in), which also removes the
+// sustained-max-power thermal concern (R4).
+typedef struct {
+	const char *name;
+	uint8_t txPowerIdx;
+	uint16_t intMin;
+	uint16_t intMax;
+} spamPowerProfileCfg_t;
+
 /*********************************************************************
  * GLOBAL VARIABLES
  */
@@ -277,6 +299,18 @@ static spam_model_t spamCurModel; // Stack keeps the pointer after load
 static uint8_t spamAddr[B_ADDR_LEN]; // Rotating static random address
 static uint32_t spamAddrRng;	     // xorshift32 state for addresses
 
+// Fase 3: TX power profiles and advertising interval, controllable at runtime.
+// HIGH keeps the original 20-30 ms / max-power behaviour as the default so the
+// firmware still spams at full range out of the box.
+static const spamPowerProfileCfg_t spamPowerProfiles[SPAM_PWR_COUNT] = {
+	[SPAM_PWR_HIGH] = { "high", HCI_EXT_TX_POWER_5_DBM, 0x20, 0x30 },
+	[SPAM_PWR_BALANCED] = { "bal", HCI_EXT_TX_POWER_0_DBM, 0x40, 0x60 },
+	[SPAM_PWR_LOW] = { "low", HCI_EXT_TX_POWER_MINUS_20_DBM, 0x80, 0xA0 },
+};
+static bt_spam_power_profile_t spamPowerProfile = SPAM_PWR_HIGH;
+static uint16_t spamIntMin = 0x20; // Current adv interval (n * 0.625 ms)
+static uint16_t spamIntMax = 0x30;
+
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -312,6 +346,8 @@ static void BleSpam_log(const char *fmt, ...);
 static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
 			       void *userArg, int_fast16_t status);
 static void BleSpam_handleCommand(const char *cmd);
+static void BleSpam_applyRadioProfile(void);
+static bool BleSpam_parseU16(const char **pp, uint16_t *out);
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -382,9 +418,11 @@ void BleSpam_start(bt_spam_mode_t mode)
 				mode == BT_SPAM_MODE_SAMSUNG ||
 				mode == BT_SPAM_MODE_ALL);
 
-	BleSpam_log("SPAM: start mode=%s models=%u int=20-30ms rot=%s",
+	BleSpam_log("SPAM: start mode=%s models=%u pwr=%s int=%u-%u rot=%s",
 		    spam_models_mode_name(spamMode),
 		    (unsigned)spam_models_count(),
+		    spamPowerProfiles[spamPowerProfile].name,
+		    (unsigned)spamIntMin, (unsigned)spamIntMax,
 		    spamRotateEveryCycle ? "cycle" : "8-cycle");
 
 	spam_models_prepare(spamActiveIdx, &spamCurModel);
@@ -564,12 +602,111 @@ static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
 }
 
 /*********************************************************************
+ * @fn      BleSpam_applyRadioProfile
+ *
+ * @brief   Push the current TX power profile and advertising interval to the
+ *          controller. Must run in task context only (mitigates R1/M1): the
+ *          UART RX callback never calls GAP/HCI directly, it only marks the
+ *          desired values and the task applies them here.
+ *
+ *          GapAdv_setParam requires advertising to be disabled, so the set is
+ *          disabled first and re-enabled only if the engine was running.
+ *
+ * @return  None.
+ */
+static void BleSpam_applyRadioProfile(void)
+{
+	bStatus_t status;
+	hciStatus_t hciStatus;
+	bool wasRunning;
+	uint32_t intMin;
+	uint32_t intMax;
+
+	if (!spamAdvReady) {
+		// GAP not up yet: values take effect when BleSpam_start() runs.
+		return;
+	}
+
+	// Disable before touching parameters; harmless if already disabled.
+	wasRunning = spamRunning;
+	GapAdv_disable(advHandleLegacy);
+
+	// GAP_ADV_PARAM_PRIMARY_INTERVAL_* expect a uint32_t. Only MIN is
+	// actually used by the controller, but set both to stay consistent.
+	intMin = spamIntMin;
+	intMax = spamIntMax;
+	status = GapAdv_setParam(advHandleLegacy,
+				 GAP_ADV_PARAM_PRIMARY_INTERVAL_MIN, &intMin);
+	if (status != SUCCESS) {
+		BleSpam_logErr("set int min", status);
+	}
+	status = GapAdv_setParam(advHandleLegacy,
+				 GAP_ADV_PARAM_PRIMARY_INTERVAL_MAX, &intMax);
+	if (status != SUCCESS) {
+		BleSpam_logErr("set int max", status);
+	}
+
+	// Global stack TX power: legacy ADV_IND ignores the per-set txPower, so
+	// drive the PA through the HCI vendor command instead.
+	hciStatus = HCI_EXT_SetTxPowerCmd(
+		spamPowerProfiles[spamPowerProfile].txPowerIdx);
+	if (hciStatus != SUCCESS) {
+		BleSpam_logErr("set tx power", hciStatus);
+	}
+
+	if (wasRunning) {
+		status = GapAdv_enable(advHandleLegacy,
+				       GAP_ADV_ENABLE_OPTIONS_USE_MAX, 0);
+		if ((status != SUCCESS) &&
+		    (status != bleAlreadyInRequestedMode)) {
+			BleSpam_logErr("adv re-enable", status);
+		}
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_parseU16
+ *
+ * @brief   Parse a decimal uint16 from *pp, skipping leading spaces and
+ *          advancing *pp past the digits. Values are clamped to 0xFFFF; the
+ *          caller range-checks. Used by the "int <min> <max>" command.
+ *
+ * @param   pp  - in/out pointer into the command string
+ * @param   out - parsed value
+ *
+ * @return  true if at least one digit was consumed.
+ */
+static bool BleSpam_parseU16(const char **pp, uint16_t *out)
+{
+	const char *p = *pp;
+	uint32_t v = 0;
+	bool any = false;
+
+	while (*p == ' ') {
+		p++;
+	}
+	while ((*p >= '0') && (*p <= '9')) {
+		v = (v * 10u) + (uint32_t)(*p - '0');
+		if (v > 0xFFFFu) {
+			v = 0xFFFFu;
+		}
+		p++;
+		any = true;
+	}
+
+	*pp = p;
+	*out = (uint16_t)v;
+	return any;
+}
+
+/*********************************************************************
  * @fn      BleSpam_handleCommand
  *
  * @brief   Parse and act on a completed UART command line (task context).
  *          Replaces the button UX the CatSniffer v3 hardware cannot offer.
  *          Modes: all/apple/android/windows/samsung (or a/p/n/w/s).
  *          Control: start (r), stop (x), status (st), help (?).
+ *          Radio: pwr high|bal|low, int <min> <max> (units of 0.625 ms).
  *
  * @param   cmd - NUL-terminated command word
  *
@@ -618,14 +755,65 @@ static void BleSpam_handleCommand(const char *cmd)
 			BleSpam_start(spamMode);
 		}
 	} else if ((strcmp(cmd, "status") == 0) || (strcmp(cmd, "st") == 0)) {
-		BleSpam_log("SPAM: mode=%s running=%u models=%u rot=%s",
+		BleSpam_log("SPAM: mode=%s running=%u models=%u rot=%s "
+			    "pwr=%s int=%u-%u",
 			    spam_models_mode_name(spamMode),
 			    (unsigned)BleSpam_is_running(),
 			    (unsigned)spam_models_count(),
-			    spamRotateEveryCycle ? "cycle" : "8-cycle");
+			    spamRotateEveryCycle ? "cycle" : "8-cycle",
+			    spamPowerProfiles[spamPowerProfile].name,
+			    (unsigned)spamIntMin, (unsigned)spamIntMax);
+	} else if (strncmp(cmd, "pwr", 3) == 0) {
+		const char *arg = cmd + 3;
+		bt_spam_power_profile_t profile;
+		bool haveProfile = true;
+
+		while (*arg == ' ') {
+			arg++;
+		}
+		if (strcmp(arg, "high") == 0) {
+			profile = SPAM_PWR_HIGH;
+		} else if (strcmp(arg, "bal") == 0) {
+			profile = SPAM_PWR_BALANCED;
+		} else if (strcmp(arg, "low") == 0) {
+			profile = SPAM_PWR_LOW;
+		} else {
+			haveProfile = false;
+		}
+
+		if (!haveProfile) {
+			BleSpam_log("ERR: usage: pwr high|bal|low");
+		} else {
+			spamPowerProfile = profile;
+			spamIntMin = spamPowerProfiles[profile].intMin;
+			spamIntMax = spamPowerProfiles[profile].intMax;
+			BleSpam_applyRadioProfile();
+			BleSpam_log("SPAM: pwr=%s int=%u-%u",
+				    spamPowerProfiles[profile].name,
+				    (unsigned)spamIntMin, (unsigned)spamIntMax);
+		}
+	} else if (strncmp(cmd, "int", 3) == 0) {
+		const char *arg = cmd + 3;
+		uint16_t mn;
+		uint16_t mx;
+
+		if (!BleSpam_parseU16(&arg, &mn) ||
+		    !BleSpam_parseU16(&arg, &mx)) {
+			BleSpam_log("ERR: usage: int <min> <max> "
+				    "(units 0.625ms, 32-16384)");
+		} else if ((mn < 0x20) || (mx < mn) || (mx > 0x4000)) {
+			BleSpam_log("ERR: int range 0x20<=min<=max<=0x4000");
+		} else {
+			spamIntMin = mn;
+			spamIntMax = mx;
+			BleSpam_applyRadioProfile();
+			BleSpam_log("SPAM: int=%u-%u (x0.625ms)", (unsigned)mn,
+				    (unsigned)mx);
+		}
 	} else if ((strcmp(cmd, "help") == 0) || (strcmp(cmd, "?") == 0)) {
 		BleSpam_log("SPAM cmds: all|apple|android|windows|samsung, "
-			    "start, stop, status");
+			    "start, stop, status, pwr high|bal|low, "
+			    "int <min> <max>");
 	} else {
 		BleSpam_log("ERR: unknown cmd '%s' (type help)", cmd);
 	}
@@ -1356,8 +1544,13 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 					GAP_ADV_EVT_MASK_SET_TERMINATED);
 			BLESPAM_ASSERT(status == SUCCESS);
 
-			// Ready: start the engine (first payload + clock)
+			// Ready: apply the default TX power / interval profile
+			// (Fase 3) before the first advertising, then start the
+			// engine (first payload + clock). The set is not
+			// enabled yet, so applyRadioProfile only pushes the
+			// parameters.
 			spamAdvReady = true;
+			BleSpam_applyRadioProfile();
 			BleSpam_start(spamMode);
 		}
 
