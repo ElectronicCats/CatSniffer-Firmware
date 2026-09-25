@@ -161,6 +161,18 @@ CFLAGS := \
 	"@$(SDK)/source/ti/ble5stack/config/build_components.opt" \
 	"@$(SDK)/source/ti/ble5stack/config/factory_config.opt"
 
+# Fase 5 (stretch, solo ble_spam): coexistencia spam + sniffing. SysConfig emite
+# -DHOST_CONFIG=PERIPHERAL_CFG en ti_utils_build_compiler.opt (incluido arriba con
+# @); cuando el proyecto pide SPAM_WITH_SCAN=1 lo redefinimos al rol combinado
+# Peripheral+Observer. bcomdef.h reconoce (PERIPHERAL_CFG|OBSERVER_CFG) como
+# configuración de primera clase y deriva CTRL_CONFIG con SCAN_CFG; la -U previa
+# evita el warning de redefinición. Estas flags van tras el @opt, así que ganan
+# en la línea de compilación. Con SPAM_WITH_SCAN distinto de 1 no se añade nada
+# (binario idéntico al build advertise-only, y el resto de firmwares intactos).
+ifeq ($(SPAM_WITH_SCAN),1)
+CFLAGS += -DSPAM_WITH_SCAN=1 -UHOST_CONFIG "-DHOST_CONFIG=(PERIPHERAL_CFG|OBSERVER_CFG)"
+endif
+
 LFLAGS := \
 	-Wl,--diag_wrap=off \
 	-Wl,--display_error_number \

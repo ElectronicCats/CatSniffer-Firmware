@@ -16,3 +16,10 @@ USE_RCOSC    := 1
 USE_NPI      := 1
 USE_PROFILES := 1
 USE_MENU     := 1
+
+# Fase 5 (stretch): coexistencia spam + sniffing. Con SPAM_WITH_SCAN := 1 el
+# firmware inicializa el rol combinado Peripheral+Observer y expone el comando
+# UART "scan on|off"; common.mak redefine HOST_CONFIG a (PERIPHERAL_CFG|
+# OBSERVER_CFG) para habilitar el scanner en la jump-table icall-lite. Por
+# defecto 0: el binario es idéntico al build advertise-only (sin regresión).
+SPAM_WITH_SCAN := 0

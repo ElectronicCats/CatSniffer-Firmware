@@ -85,6 +85,18 @@
 #include "ti_ble_config.h"
 #include "ble_spam_models.h"
 
+// Fase 5 (stretch): GAP coexistence — spam advertising + passive sniffing.
+// Off by default so the flag=0 binary is byte-identical to the advertise-only
+// build; enable with SPAM_WITH_SCAN=1 in ble_spam.mak (which also switches the
+// stack to the combined Peripheral+Observer role via HOST_CONFIG).
+#ifndef SPAM_WITH_SCAN
+#define SPAM_WITH_SCAN 0
+#endif
+
+#if SPAM_WITH_SCAN
+#include <gap_scanner.h> // GapScan_* and GapScan_Evt_AdvRpt_t
+#endif
+
 #ifdef PTM_MODE
 #include "npi_task.h"	  // To allow RX event registration
 #include "npi_ble.h"	  // To enable transmission of messages to UART
@@ -108,6 +120,14 @@
 #define SPAM_STATS_CYCLES 100	  // Cycles between stats log lines
 #define SPAM_LINK_STALL_CYCLES 4  // Stalled cycles before forcing link term
 #define SPAM_STACK_WARN_PCT 80	  // Stack high-water % that triggers WARN once
+
+#if SPAM_WITH_SCAN
+// Passive-scan windowing (units of 0.625 ms). A window well below the interval
+// leaves radio time for the spam advertising events, so the two roles coexist
+// instead of the scan starving the advertiser: 100 ms interval / 50 ms window.
+#define SPAM_SCAN_INTERVAL 0x00A0
+#define SPAM_SCAN_WINDOW 0x0050
+#endif
 
 // Task configuration
 #define SPAM_TASK_PRIORITY 1
@@ -135,6 +155,9 @@
 
 #define SPAM_CYCLE_EVT 9
 #define SPAM_UART_CMD_EVT 10
+#if SPAM_WITH_SCAN
+#define SPAM_SCAN_REPORT_EVT 11 // A GapScan advertising report is queued
+#endif
 
 // Internal Events for RTOS application
 #define SPAM_ICALL_EVT ICALL_MSG_EVENT_ID  // Event_Id_31
@@ -302,6 +325,13 @@ static spam_model_t spamCurModel; // Stack keeps the pointer after load
 static uint8_t spamAddr[B_ADDR_LEN]; // Rotating static random address
 static uint32_t spamAddrRng;	     // xorshift32 state for addresses
 
+#if SPAM_WITH_SCAN
+// Fase 5: passive sniffing alongside the spam. The scan is off until the user
+// runs "scan on", so the default runtime behaviour matches the flag=0 build.
+static bool spamScanReady; // GapScan configured (GAP init done)
+static bool spamScanOn;	   // Passive scan currently enabled
+#endif
+
 // Fase 3: TX power profiles and advertising interval, controllable at runtime.
 // HIGH keeps the original 20-30 ms / max-power behaviour as the default so the
 // firmware still spams at full range out of the box.
@@ -353,6 +383,12 @@ static void BleSpam_uartReadCb(UART2_Handle handle, void *buf, size_t count,
 static void BleSpam_handleCommand(const char *cmd);
 static void BleSpam_applyRadioProfile(void);
 static bool BleSpam_parseU16(const char **pp, uint16_t *out);
+#if SPAM_WITH_SCAN
+static void BleSpam_scanCb(uint32_t evt, void *pMsg, uintptr_t arg);
+static void BleSpam_setupScan(void);
+static void BleSpam_setScan(bool on);
+static void BleSpam_processScanReport(GapScan_Evt_AdvRpt_t *pRpt);
+#endif
 
 /*********************************************************************
  * EXTERN FUNCTIONS
@@ -827,6 +863,9 @@ static void BleSpam_handleCommand(const char *cmd)
 			    spamRotateEveryCycle ? "cycle" : "8-cycle",
 			    spamPowerProfiles[spamPowerProfile].name,
 			    (unsigned)spamIntMin, (unsigned)spamIntMax);
+#if SPAM_WITH_SCAN
+		BleSpam_log("SCAN: %s", spamScanOn ? "on" : "off");
+#endif
 	} else if (strncmp(cmd, "pwr", 3) == 0) {
 		const char *arg = cmd + 3;
 		bt_spam_power_profile_t profile;
@@ -876,10 +915,29 @@ static void BleSpam_handleCommand(const char *cmd)
 		}
 	} else if (strcmp(cmd, "stats") == 0) {
 		BleSpam_logStats();
+#if SPAM_WITH_SCAN
+	} else if (strncmp(cmd, "scan", 4) == 0) {
+		const char *arg = cmd + 4;
+
+		while (*arg == ' ') {
+			arg++;
+		}
+		if (strcmp(arg, "on") == 0) {
+			BleSpam_setScan(true);
+		} else if (strcmp(arg, "off") == 0) {
+			BleSpam_setScan(false);
+		} else {
+			BleSpam_log("ERR: usage: scan on|off");
+		}
+#endif
 	} else if ((strcmp(cmd, "help") == 0) || (strcmp(cmd, "?") == 0)) {
 		BleSpam_log("SPAM cmds: all|apple|android|windows|samsung, "
 			    "start, stop, status, stats, pwr high|bal|low, "
+#if SPAM_WITH_SCAN
+			    "int <min> <max>, scan on|off");
+#else
 			    "int <min> <max>");
+#endif
 	} else {
 		BleSpam_log("ERR: unknown cmd '%s' (type help)", cmd);
 	}
@@ -1273,10 +1331,17 @@ static void BleSpam_init(void)
 	BLE_LOG_INT_TIME(0, BLE_LOG_MODULE_APP,
 			 "APP : ---- call GAP_DeviceInit",
 			 GAP_PROFILE_PERIPHERAL);
-	// Initialize GAP layer for Peripheral role and register to receive GAP
-	// events
+	// Initialize GAP layer and register to receive GAP events. Fase 5 adds
+	// the Observer role so the same device can advertise (spam) and scan
+	// (sniff) at once; the combined role needs HOST_CONFIG to include
+	// OBSERVER_CFG (see ble_spam.mak / common.mak SPAM_WITH_SCAN).
+#if SPAM_WITH_SCAN
+	GAP_DeviceInit(GAP_PROFILE_PERIPHERAL | GAP_PROFILE_OBSERVER,
+		       selfEntity, addrMode, pDevRandAddr);
+#else
 	GAP_DeviceInit(GAP_PROFILE_PERIPHERAL, selfEntity, addrMode,
 		       pDevRandAddr);
+#endif
 
 	// Open the console UART directly (the same UART the Display module
 	// maps) so we can both print status and receive single-line commands.
@@ -1514,6 +1579,15 @@ static void BleSpam_processAppMsg(spamEvt_t *pMsg)
 		BleSpam_processSpamCycle();
 		break;
 
+#if SPAM_WITH_SCAN
+	case SPAM_SCAN_REPORT_EVT:
+		// pData is the GapScan report struct; freed by the generic
+		// tail below after the handler releases the nested payload.
+		BleSpam_processScanReport(
+			(GapScan_Evt_AdvRpt_t *)(pMsg->pData));
+		break;
+#endif
+
 	default:
 		// Do nothing.
 		break;
@@ -1618,6 +1692,13 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 			spamAdvReady = true;
 			BleSpam_applyRadioProfile();
 			BleSpam_start(spamMode);
+
+#if SPAM_WITH_SCAN
+			// Fase 5: configure passive scanning now that the GAP
+			// (Observer) layer is up. It stays disabled until the
+			// user runs "scan on".
+			BleSpam_setupScan();
+#endif
 		}
 
 		break;
@@ -1871,6 +1952,134 @@ static void BleSpam_processAdvEvent(spamGapAdvEventData_t *pEventData)
 		ICall_free(pEventData->pBuf);
 	}
 }
+
+#if SPAM_WITH_SCAN
+/*********************************************************************
+ * @fn      BleSpam_scanCb
+ *
+ * @brief   GapScan module callback (Observer role). Runs in the stack
+ *          context, so it only forwards the report to the task queue.
+ *          The TI split-callback model (separate GapAdv_create and
+ *          GapScan_registerCb callbacks feeding one task) is the
+ *          coexistence dispatcher here: unlike ESP-IDF's single GAP
+ *          callback, no chained dispatcher is needed (decision D-M7).
+ */
+static void BleSpam_scanCb(uint32_t evt, void *pMsg, uintptr_t arg)
+{
+	(void)arg;
+
+	// Only advertising reports carry a GapScan_Evt_AdvRpt_t to hand off;
+	// the event mask requests nothing else, but stay defensive.
+	if (evt & GAP_EVT_ADV_REPORT) {
+		if (BleSpam_enqueueMsg(SPAM_SCAN_REPORT_EVT, pMsg) != SUCCESS) {
+			GapScan_Evt_AdvRpt_t *pRpt =
+				(GapScan_Evt_AdvRpt_t *)pMsg;
+			if (pRpt && pRpt->pData) {
+				ICall_free(pRpt->pData);
+			}
+			ICall_free(pMsg);
+		}
+	} else if (pMsg != NULL) {
+		// Enabled/disabled/other: nothing to report, just release it.
+		ICall_free(pMsg);
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_setupScan
+ *
+ * @brief   One-time GapScan configuration (passive, coexistence window).
+ *          Called from GAP_DEVICE_INIT_DONE; does not enable scanning.
+ */
+static void BleSpam_setupScan(void)
+{
+	uint16_t rptFields = SCAN_ADVRPT_FLD_ADDRESS |
+			     SCAN_ADVRPT_FLD_ADDRTYPE | SCAN_ADVRPT_FLD_RSSI |
+			     SCAN_ADVRPT_FLD_DATALEN;
+	uint8_t primPhy = SCAN_PRIM_PHY_1M;
+	uint8_t fltDup = SCAN_FLT_DUP_ENABLE; // one report per device per scan
+
+	GapScan_registerCb(BleSpam_scanCb, 0);
+	GapScan_setEventMask(GAP_EVT_ADV_REPORT);
+	// Passive scan: never transmits SCAN_REQ, so it does not contend with
+	// the advertiser's TX and keeps the sniffer silent on air.
+	GapScan_setPhyParams(SCAN_PRIM_PHY_1M, SCAN_TYPE_PASSIVE,
+			     SPAM_SCAN_INTERVAL, SPAM_SCAN_WINDOW);
+	GapScan_setParam(SCAN_PARAM_RPT_FIELDS, &rptFields);
+	GapScan_setParam(SCAN_PARAM_PRIM_PHYS, &primPhy);
+	GapScan_setParam(SCAN_PARAM_FLT_DUP, &fltDup);
+
+	spamScanReady = true;
+	BleSpam_log("SCAN: ready (type 'scan on')");
+}
+
+/*********************************************************************
+ * @fn      BleSpam_setScan
+ *
+ * @brief   Enable/disable the passive scan. Runs in task context (from
+ *          the UART command handler), so calling GAP is safe (mirrors the
+ *          R1/M1 mitigation used for the radio profile).
+ */
+static void BleSpam_setScan(bool on)
+{
+	if (!spamScanReady) {
+		BleSpam_log("ERR: scan not ready");
+		return;
+	}
+	if (on == spamScanOn) {
+		BleSpam_log("SCAN: already %s", on ? "on" : "off");
+		return;
+	}
+
+	if (on) {
+		// duration 0 = scan continuously until disabled, coexisting
+		// with the ongoing spam advertising.
+		bStatus_t status = GapScan_enable(0, 0, 0);
+		if ((status == SUCCESS) ||
+		    (status == bleAlreadyInRequestedMode)) {
+			spamScanOn = true;
+			BleSpam_log("SCAN: on (passive %u/%u)",
+				    (unsigned)SPAM_SCAN_INTERVAL,
+				    (unsigned)SPAM_SCAN_WINDOW);
+		} else {
+			BleSpam_logErr("scan enable", status);
+		}
+	} else {
+		bStatus_t status = GapScan_disable();
+		if ((status == SUCCESS) ||
+		    (status == bleAlreadyInRequestedMode)) {
+			spamScanOn = false;
+			BleSpam_log("SCAN: off");
+		} else {
+			BleSpam_logErr("scan disable", status);
+		}
+	}
+}
+
+/*********************************************************************
+ * @fn      BleSpam_processScanReport
+ *
+ * @brief   Log one sniffed advertising report in task context. The report
+ *          struct itself is freed by the app-msg framework; only the
+ *          nested payload buffer is freed here.
+ */
+static void BleSpam_processScanReport(GapScan_Evt_AdvRpt_t *pRpt)
+{
+	if (pRpt == NULL) {
+		return;
+	}
+
+	BleSpam_log("SCAN: %02x:%02x:%02x:%02x:%02x:%02x rssi=%d len=%u",
+		    (unsigned)pRpt->addr[5], (unsigned)pRpt->addr[4],
+		    (unsigned)pRpt->addr[3], (unsigned)pRpt->addr[2],
+		    (unsigned)pRpt->addr[1], (unsigned)pRpt->addr[0],
+		    (int)pRpt->rssi, (unsigned)pRpt->dataLen);
+
+	if (pRpt->pData != NULL) {
+		ICall_free(pRpt->pData);
+	}
+}
+#endif // SPAM_WITH_SCAN
 
 /*********************************************************************
  * @fn      BleSpam_pairStateCb
