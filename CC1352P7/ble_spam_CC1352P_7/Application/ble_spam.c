@@ -106,6 +106,7 @@
 #define SPAM_CYCLE_EVT_PERIOD 250 // Payload cycle period (ms)
 #define SPAM_MAC_ROTATE_CYCLES 8  // Cycles between MAC rotations
 #define SPAM_STATS_CYCLES 100	  // Cycles between stats log lines
+#define SPAM_LINK_STALL_CYCLES 4  // Stalled cycles before forcing link term
 
 // Task configuration
 #define SPAM_TASK_PRIORITY 1
@@ -269,6 +270,7 @@ static bool spamTrngOk;	  // TRNG seed available
 static bt_spam_mode_t spamMode = BLE_SPAM_DEFAULT_MODE;
 static uint8_t spamActiveIdx;	     // Position in the active model list
 static uint16_t spamCycleCount;	     // Cycles since BleSpam_start()
+static uint8_t spamLinkStallCycles;  // Consecutive cycles blocked by a link
 static spam_model_t spamCurModel;    // Stack keeps the pointer after load
 static uint8_t spamAddr[B_ADDR_LEN]; // Rotating static random address
 static uint32_t spamAddrRng;	     // xorshift32 state for addresses
@@ -366,6 +368,7 @@ void BleSpam_start(bt_spam_mode_t mode)
 	spam_models_rebuild_active(spamMode);
 	spamActiveIdx = 0;
 	spamCycleCount = 0;
+	spamLinkStallCycles = 0;
 
 	BleSpam_log("SPAM: start mode=%s models=%u int=20-30ms",
 		    spam_models_mode_name(spamMode),
@@ -484,8 +487,13 @@ static void BleSpam_log(const char *fmt, ...)
 	if (n < 0) {
 		return;
 	}
-	if (n > (int)(sizeof(buf) - 2)) {
-		n = (int)(sizeof(buf) - 2);
+	// C1: SystemP_vsnprintf writes at most sizeof(buf)-2 chars plus its
+	// NUL, and returns the untruncated length. Clamp to sizeof(buf)-3 so
+	// the two CRLF bytes overwrite the trailing content/NUL instead of
+	// leaving an embedded NUL at buf[sizeof(buf)-2] and dropping the last
+	// character.
+	if (n > (int)(sizeof(buf) - 3)) {
+		n = (int)(sizeof(buf) - 3);
 	}
 	buf[n++] = '\r';
 	buf[n++] = '\n';
@@ -701,10 +709,30 @@ static void BleSpam_initRandom(void)
 		memcpy(spamAddr, &rnd[8], B_ADDR_LEN);
 		spamAddr[B_ADDR_LEN - 1] |= 0xC0;
 	} else {
-		// Fixed fallback, reported by BleSpam_init() on display
-		spam_models_seed(0xC5D5E7A1u);
-		spamAddrRng = 0x5A3C2709u;
+		// C2: the TRNG is unavailable (reported by BleSpam_init()). A
+		// fully constant fallback would replay the same PRNG stream and
+		// the same MAC on every boot. Fold in live entropy from the
+		// RTOS tick counter so seeds and the fallback address
+		// decorrelate across boots. Not cryptographic; the full
+		// per-cycle hardening lands in Fase 2.
+		uint32_t entropy = (uint32_t)Clock_getTicks();
+
+		entropy ^= entropy << 13;
+		entropy ^= entropy >> 17;
+		entropy ^= entropy << 5;
+
+		spam_models_seed(0xC5D5E7A1u ^ entropy);
+		spamAddrRng = 0x5A3C2709u ^ entropy;
+		if (spamAddrRng == 0) {
+			spamAddrRng = 0x9E3779B9u;
+		}
+
 		memcpy(spamAddr, fallbackAddr, B_ADDR_LEN);
+		spamAddr[0] ^= (uint8_t)entropy;
+		spamAddr[1] ^= (uint8_t)(entropy >> 8);
+		spamAddr[2] ^= (uint8_t)(entropy >> 16);
+		spamAddr[3] ^= (uint8_t)(entropy >> 24);
+		spamAddr[B_ADDR_LEN - 1] |= 0xC0; // Keep static-random top bits
 	}
 }
 
@@ -793,11 +821,25 @@ static void BleSpam_processSpamCycle(void)
 	}
 
 	// Incoming links take the radio: skip the swap but keep the
-	// engine alive (the link is terminated by the GAP handler)
+	// engine alive (the link is terminated by the GAP handler).
 	if (linkDB_NumActive() > 0) {
+		// C5: if a link persists across several cycles the GAP
+		// handler's termination did not take; force-terminate every
+		// active link so the engine cannot stall indefinitely on a
+		// stuck connection.
+		if (++spamLinkStallCycles >= SPAM_LINK_STALL_CYCLES) {
+			bStatus_t termStatus = GAP_TerminateLinkReq(
+				LINKDB_CONNHANDLE_ALL,
+				HCI_DISCONNECT_REMOTE_USER_TERM);
+			if (termStatus != SUCCESS) {
+				BleSpam_logErr("stall term", termStatus);
+			}
+			spamLinkStallCycles = 0;
+		}
 		Util_startClock(&clkSpamCycle);
 		return;
 	}
+	spamLinkStallCycles = 0;
 
 	spamActiveIdx = (uint8_t)((spamActiveIdx + 1) % spam_models_count());
 	spam_models_prepare(spamActiveIdx, &spamCurModel);
@@ -1231,23 +1273,11 @@ static void BleSpam_processGapMessage(gapEventHdr_t *pMsg)
 			(gapDeviceInitDoneEvent_t *)pMsg;
 
 		if (pPkt->hdr.status == SUCCESS) {
-			// Store the system ID
-			uint8_t systemId[DEVINFO_SYSTEM_ID_LEN];
-
-			// use 6 bytes of device address for 8 bytes of system
-			// ID value
-			systemId[0] = pPkt->devAddr[0];
-			systemId[1] = pPkt->devAddr[1];
-			systemId[2] = pPkt->devAddr[2];
-
-			// set middle bytes to zero
-			systemId[4] = 0x00;
-			systemId[3] = 0x00;
-
-			// shift three bytes up
-			systemId[7] = pPkt->devAddr[5];
-			systemId[6] = pPkt->devAddr[4];
-			systemId[5] = pPkt->devAddr[3];
+			// C4 (D-M1): the stock example copies the (rotating)
+			// device address into DEVINFO_SYSTEM_ID, leaking it to
+			// any GATT reader. Publish a neutral all-zero System ID
+			// instead so the rotating MAC is never exposed.
+			uint8_t systemId[DEVINFO_SYSTEM_ID_LEN] = { 0 };
 
 			// Set Device Info Service Parameter
 			DevInfo_SetParameter(DEVINFO_SYSTEM_ID,
@@ -1683,16 +1713,13 @@ static void BleSpam_processPairState(spamPairStateData_t *pPairData)
  */
 static void BleSpam_processPasscode(spamPasscodeData_t *pPasscodeData)
 {
-	// Display passcode to user
-	if (pPasscodeData->uiOutputs != 0) {
-		// Display_printf(dispHandle, SPAM_ROW_CONNECTION, 0, "Passcode:
-		// %d",
-		//                    B_APP_DEFAULT_PASSCODE);
-	}
-
-	// Send passcode response
-	GAPBondMgr_PasscodeRsp(pPasscodeData->connHandle, SUCCESS,
-			       B_APP_DEFAULT_PASSCODE);
+	// C3 (D-M2, conservative): the spam engine never serves real
+	// connections, so pairing must not succeed with a hard-coded passcode.
+	// Reject every passcode request instead of answering with
+	// B_APP_DEFAULT_PASSCODE. The aggressive option (USE_PROFILES := 0,
+	// dropping SimpleProfile/DevInfo) is deferred to Fase 6 after
+	// validating the stack link (R2).
+	GAPBondMgr_PasscodeRsp(pPasscodeData->connHandle, FAILURE, 0);
 }
 
 /*********************************************************************
