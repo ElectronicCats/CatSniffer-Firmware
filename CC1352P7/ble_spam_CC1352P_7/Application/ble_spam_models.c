@@ -567,14 +567,36 @@ uint8_t spam_models_prepare(uint8_t active_idx, spam_model_t *out)
 		break;
 
 	case SPAM_TYPE_SAMSUNG_SETUP:
-		/* Magic EasySetup fijo: en Watch los bytes 8-13 son parte de la
-		 * firma (01 ff 00 00 43). No randomizar nada aqui; la variacion
-		 * anti-dedup proviene del id de modelo y de la MAC aleatoria
-		 * por ciclo.
+		/* EasySetup (Watch/Buds) esta totalmente firmado: el magic
+		 * prefix y el id de modelo/color son todos bytes de identidad
+		 * (verificado contra Flipper-XFW easysetup.c y
+		 * simondankelmann/Bluetooth-LE-Spam). No hay byte advisory que
+		 * randomizar sin romper el popup (Fase 2, riesgo R3). El
+		 * anti-dedup de Samsung se delega por completo a la rotacion de
+		 * MAC por ciclo que hace el motor (BleSpam_processSpamCycle).
 		 */
 		break;
 
 	case SPAM_TYPE_GOOGLE_FAST_PAIR:
+		/* Fast Pair discoverable: el service data 0xFE2C y los 3 bytes
+		 * de model ID (11-13) son la identidad del dispositivo y deben
+		 * permanecer fijos, o el receptor deja de reconocer el modelo
+		 * (R3). La ultima estructura AD "02 0a XX" es un TX Power
+		 * Level: su byte de valor es advisory (solo estimacion de
+		 * proximidad), asi que se randomiza por ciclo para que los
+		 * payloads consecutivos difieran y romper el dedup por
+		 * contenido. El anti-dedup decisivo lo aporta la rotacion de
+		 * MAC por ciclo (BleSpam_processSpamCycle). Se comprueba la
+		 * firma "02 0a" antes de tocar el byte para no corromper otros
+		 * formatos.
+		 */
+		if (out->len >= 3u && out->data[out->len - 2u] == 0x0Au &&
+		    out->data[out->len - 3u] == 0x02u) {
+			out->data[out->len - 1u] =
+				(uint8_t)(spam_models_rand() & 0xFFu);
+		}
+		break;
+
 	default:
 		break;
 	}

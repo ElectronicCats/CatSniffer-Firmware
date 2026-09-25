@@ -268,10 +268,12 @@ static bool spamAdvReady; // Adv set created (GAP init done)
 static bool spamRunning;  // 250 ms cycle engine active
 static bool spamTrngOk;	  // TRNG seed available
 static bt_spam_mode_t spamMode = BLE_SPAM_DEFAULT_MODE;
-static uint8_t spamActiveIdx;	     // Position in the active model list
-static uint16_t spamCycleCount;	     // Cycles since BleSpam_start()
-static uint8_t spamLinkStallCycles;  // Consecutive cycles blocked by a link
-static spam_model_t spamCurModel;    // Stack keeps the pointer after load
+static uint8_t spamActiveIdx;	    // Position in the active model list
+static uint16_t spamCycleCount;	    // Cycles since BleSpam_start()
+static uint8_t spamLinkStallCycles; // Consecutive cycles blocked by a link
+static bool spamRotateEveryCycle; // Rotate MAC per cycle (Fase 2, no ephemeral
+				  // payload)
+static spam_model_t spamCurModel; // Stack keeps the pointer after load
 static uint8_t spamAddr[B_ADDR_LEN]; // Rotating static random address
 static uint32_t spamAddrRng;	     // xorshift32 state for addresses
 
@@ -370,9 +372,20 @@ void BleSpam_start(bt_spam_mode_t mode)
 	spamCycleCount = 0;
 	spamLinkStallCycles = 0;
 
-	BleSpam_log("SPAM: start mode=%s models=%u int=20-30ms",
+	// Fase 2 anti-dedup: Fast Pair (discoverable model ID) and Samsung
+	// EasySetup carry no per-cycle ephemeral payload field, so the receiver
+	// dedups a fixed model unless the MAC changes. Rotate the static random
+	// address every cycle for the modes that contain those models. Apple
+	// and Windows keep the 8-cycle cadence (Apple already randomizes
+	// ephemeral payload bytes) to limit radio churn.
+	spamRotateEveryCycle = (mode == BT_SPAM_MODE_ANDROID ||
+				mode == BT_SPAM_MODE_SAMSUNG ||
+				mode == BT_SPAM_MODE_ALL);
+
+	BleSpam_log("SPAM: start mode=%s models=%u int=20-30ms rot=%s",
 		    spam_models_mode_name(spamMode),
-		    (unsigned)spam_models_count());
+		    (unsigned)spam_models_count(),
+		    spamRotateEveryCycle ? "cycle" : "8-cycle");
 
 	spam_models_prepare(spamActiveIdx, &spamCurModel);
 	BleSpam_log("SPAM: model %s (1/%u)", spamCurModel.name,
@@ -605,10 +618,11 @@ static void BleSpam_handleCommand(const char *cmd)
 			BleSpam_start(spamMode);
 		}
 	} else if ((strcmp(cmd, "status") == 0) || (strcmp(cmd, "st") == 0)) {
-		BleSpam_log("SPAM: mode=%s running=%u models=%u",
+		BleSpam_log("SPAM: mode=%s running=%u models=%u rot=%s",
 			    spam_models_mode_name(spamMode),
 			    (unsigned)BleSpam_is_running(),
-			    (unsigned)spam_models_count());
+			    (unsigned)spam_models_count(),
+			    spamRotateEveryCycle ? "cycle" : "8-cycle");
 	} else if ((strcmp(cmd, "help") == 0) || (strcmp(cmd, "?") == 0)) {
 		BleSpam_log("SPAM cmds: all|apple|android|windows|samsung, "
 			    "start, stop, status");
@@ -845,7 +859,8 @@ static void BleSpam_processSpamCycle(void)
 	spam_models_prepare(spamActiveIdx, &spamCurModel);
 
 	spamCycleCount++;
-	rotateAddr = ((spamCycleCount % SPAM_MAC_ROTATE_CYCLES) == 0);
+	rotateAddr = spamRotateEveryCycle ||
+		     ((spamCycleCount % SPAM_MAC_ROTATE_CYCLES) == 0);
 
 	BleSpam_swapPayload(&spamCurModel, rotateAddr);
 	Util_startClock(&clkSpamCycle);
