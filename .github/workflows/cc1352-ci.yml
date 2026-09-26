@@ -27,11 +27,17 @@ env:
 
 jobs:
   # ------------------------------------------------------------------ v3
-  # El unico build que hoy puede correr end-to-end: CC1352P7/linux-build/
-  # tiene Makefiles de Linux. La matriz sale de projects/*.mak.
+  # El build de v3 usaba CC1352P7/linux-build/ (Makefiles de Linux, matriz
+  # desde projects/*.mak). Esa carpeta se dejo de trackear en el repo y ahora
+  # es local: se mantiene en la maquina de quien compila, no viaja en git.
+  # Por eso este job esta DESACTIVADO (`if: false`): tras el checkout el runner
+  # no tiene linux-build/ y el build fallaria. Se deja cableado y explicito
+  # para que, si se vuelve a versionar el build (o se apunta a uno externo),
+  # baste con quitar el `if` y ajustar las rutas del `make`.
   cc1352p7:
     name: "v3 · CC1352P7 · ${{ matrix.project }}"
     runs-on: ubuntu-22.04
+    if: false
     # fail-fast: false para que un firmware roto no oculte el estado de los otros.
     strategy:
       fail-fast: false
