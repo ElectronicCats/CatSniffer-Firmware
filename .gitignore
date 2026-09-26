@@ -13,6 +13,5 @@ SAMD21/tools/
 SAMD21/.west/
 .cache/
 
-# Salidas y rutas locales del build de CC1352P7 en Linux
-CC1352P7/linux-build/out/
-CC1352P7/linux-build/paths.local.mk
+# Build local de CC1352P7 en Linux: se mantiene fuera del repo
+CC1352P7/linux-build/
