@@ -161,17 +161,22 @@ CFLAGS := \
 	"@$(SDK)/source/ti/ble5stack/config/build_components.opt" \
 	"@$(SDK)/source/ti/ble5stack/config/factory_config.opt"
 
-# Fase 5 (stretch, solo ble_spam): coexistencia spam + sniffing. SysConfig emite
-# -DHOST_CONFIG=PERIPHERAL_CFG en ti_utils_build_compiler.opt (incluido arriba con
-# @); cuando el proyecto pide SPAM_WITH_SCAN=1 lo redefinimos al rol combinado
-# Peripheral+Observer. bcomdef.h reconoce (PERIPHERAL_CFG|OBSERVER_CFG) como
-# configuración de primera clase y deriva CTRL_CONFIG con SCAN_CFG; la -U previa
-# evita el warning de redefinición. Estas flags van tras el @opt, así que ganan
-# en la línea de compilación. Con SPAM_WITH_SCAN distinto de 1 no se añade nada
-# (binario idéntico al build advertise-only, y el resto de firmwares intactos).
-ifeq ($(SPAM_WITH_SCAN),1)
-CFLAGS += -DSPAM_WITH_SCAN=1 -UHOST_CONFIG "-DHOST_CONFIG=(PERIPHERAL_CFG|OBSERVER_CFG)"
+# Hook genérico: un proyecto puede forzar una cabecera al inicio de CADA unidad
+# de traducción (app y fuentes del stack) declarando en su projects/<nombre>.mak
+#   PROJECT_PREINCLUDE := Application/<archivo>.h   (ruta relativa a SRC_DIR)
+# Va tras el @opt de SysConfig, así que la cabecera puede (re)definir de forma
+# portátil símbolos que SysConfig exporta —p. ej. HOST_CONFIG— sin lógica
+# específica de proyecto aquí. common.mak no sabe nada de ningún firmware en
+# concreto: ble_spam usa este hook para acoplar SPAM_WITH_SCAN con el rol
+# Observer del stack desde su propio árbol de fuentes (ble_spam_config.h).
+ifdef PROJECT_PREINCLUDE
+CFLAGS += -include $(SRC_DIR)/$(PROJECT_PREINCLUDE)
 endif
+
+# Flags extra por proyecto (definidas en projects/<nombre>.mak, que se incluye
+# antes de este CFLAGS := ). Se añaden aquí, después, para que sobrevivan a la
+# asignación inmediata de arriba y ganen sobre el @opt de SysConfig.
+CFLAGS += $(PROJECT_CFLAGS)
 
 LFLAGS := \
 	-Wl,--diag_wrap=off \

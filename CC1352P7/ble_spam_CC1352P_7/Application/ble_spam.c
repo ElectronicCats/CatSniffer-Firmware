@@ -79,18 +79,30 @@
 #include <rcosc_calibration.h>
 #endif // USE_RCOSC
 
+// GAP coexistence — spam advertising + passive sniffing. El default (1) y el
+// acoplamiento con el rol Observer del stack viven en ble_spam_config.h, un
+// header portátil que también se fuerza sobre las fuentes del stack (-include
+// en linux-build). Se incluye aquí, ANTES que ti_ble_config.h, para que este .c
+// redefina HOST_CONFIG antes de que el header del stack lo consuma, aunque se
+// compile fuera de la ruta con force-include; el #ifndef interno respeta
+// cualquier -DSPAM_WITH_SCAN=0 que llegue por la línea de compilación.
+#include "ble_spam_config.h"
+
 #include <ti_drivers_config.h>
 
 #include <ble_spam.h>
 #include "ti_ble_config.h"
 #include "ble_spam_models.h"
 
-// Fase 5 (stretch): GAP coexistence — spam advertising + passive sniffing.
-// Off by default so the flag=0 binary is byte-identical to the advertise-only
-// build; enable with SPAM_WITH_SCAN=1 in ble_spam.mak (which also switches the
-// stack to the combined Peripheral+Observer role via HOST_CONFIG).
-#ifndef SPAM_WITH_SCAN
-#define SPAM_WITH_SCAN 0
+// Invariante de seguridad (a nivel de código, no de build): el código de scan
+// NUNCA puede compilarse sin el rol Observer en el stack. Aquí ti_ble_config.h
+// / bcomdef.h ya definieron HOST_CONFIG y OBSERVER_CFG, así que comprobamos el
+// rol EFECTIVO. Si alguien habilita SPAM_WITH_SCAN pero HOST_CONFIG no incluyó
+// OBSERVER_CFG (p. ej. se saltó el force-include, o SysConfig no exporta el rol
+// combinado), el build falla en lugar de generar firmware que llamaría a la
+// jump-table del scanner sin scanner detrás.
+#if SPAM_WITH_SCAN && !(HOST_CONFIG & OBSERVER_CFG)
+#error "SPAM_WITH_SCAN=1 exige el rol Observer en HOST_CONFIG. Asegura el force-include de ble_spam_config.h (PROJECT_PREINCLUDE en ble_spam.mak) o compila con SPAM_WITH_SCAN=0 para el binario advertise-only."
 #endif
 
 #if SPAM_WITH_SCAN

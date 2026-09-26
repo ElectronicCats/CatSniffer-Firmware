@@ -17,9 +17,20 @@ USE_NPI      := 1
 USE_PROFILES := 1
 USE_MENU     := 1
 
-# Fase 5 (stretch): coexistencia spam + sniffing. Con SPAM_WITH_SCAN := 1 el
-# firmware inicializa el rol combinado Peripheral+Observer y expone el comando
-# UART "scan on|off"; common.mak redefine HOST_CONFIG a (PERIPHERAL_CFG|
-# OBSERVER_CFG) para habilitar el scanner en la jump-table icall-lite. Por
-# defecto 0: el binario es idéntico al build advertise-only (sin regresión).
-SPAM_WITH_SCAN := 0
+# Coexistencia spam + sniffing: el escaneo BLE pasivo forma parte del build por
+# defecto. Toda la configuración —el default SPAM_WITH_SCAN=1 y el acoplamiento
+# con el rol Observer del stack (HOST_CONFIG)— vive ahora en el árbol de fuentes
+# del proyecto, en Application/ble_spam_config.h, que se fuerza al inicio de cada
+# unidad de traducción vía este hook portátil (common.mak lo traduce a -include).
+# linux-build no contiene ninguna lógica específica de ble_spam: el firmware es
+# autocontenido y su config viaja con el código (portable a CCS u otro build).
+PROJECT_PREINCLUDE := Application/ble_spam_config.h
+
+# Opt-out sin editar código, para builds sin scanner (binario advertise-only
+# histórico, sin breaking changes): `make ble_spam SPAM_WITH_SCAN=0`. Solo se
+# propaga si el usuario lo pide por la línea de make; el default (1) lo pone el
+# header. El #ifndef de ble_spam_config.h respeta este -D, y con valor 0 ni se
+# redefine HOST_CONFIG ni se dispara el #error del invariante.
+ifdef SPAM_WITH_SCAN
+PROJECT_CFLAGS += -DSPAM_WITH_SCAN=$(SPAM_WITH_SCAN)
+endif
