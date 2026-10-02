@@ -202,6 +202,116 @@ static void test_randomization(void)
 	       a.name);
 }
 
+/* Exact per-type ephemeral-byte contract. Encodes the switch in
+ * spam_models_prepare() as an auditable table: which byte positions a type is
+ * allowed to vary, and (by omission) which must stay fixed as device
+ * identity / signature. Detection is statistical -- over EPH_ITERS cycles a
+ * truly randomized byte will move with overwhelming probability
+ * ((1/256)^EPH_ITERS of a false "stable"), while an identity byte never moves.
+ * This catches both regressions: an ephemeral byte that stops being
+ * randomized (anti-dedup silently disabled) and an identity/signature byte
+ * that starts being mutated (popup silently broken). */
+#define EPH_ITERS 128
+
+static void expected_ephemeral_set(const spam_model_t *m,
+				   uint8_t expect[SPAM_MODEL_MAX_LEN])
+{
+	uint8_t i;
+
+	for (i = 0; i < SPAM_MODEL_MAX_LEN; i++) {
+		expect[i] = 0;
+	}
+
+	switch (m->type) {
+	case SPAM_TYPE_APPLE_PROXIMITY:
+		/* Lid/sequence byte 11 + 4-byte auth tag 15-18. */
+		expect[11] = 1;
+		expect[15] = 1;
+		expect[16] = 1;
+		expect[17] = 1;
+		expect[18] = 1;
+		break;
+	case SPAM_TYPE_APPLE_ACTION:
+		/* 6 auth bytes 9-14. */
+		expect[9] = 1;
+		expect[10] = 1;
+		expect[11] = 1;
+		expect[12] = 1;
+		expect[13] = 1;
+		expect[14] = 1;
+		break;
+	case SPAM_TYPE_GOOGLE_FAST_PAIR:
+		/* Trailing TX Power value byte, only behind the "02 0a"
+		 * (TX Power Level AD) signature; identity/model ID stays fixed.
+		 */
+		if (m->len >= 3u && m->data[m->len - 2u] == 0x0Au &&
+		    m->data[m->len - 3u] == 0x02u) {
+			expect[m->len - 1u] = 1;
+		}
+		break;
+	case SPAM_TYPE_MICROSOFT_SWIFT:
+	case SPAM_TYPE_SAMSUNG_SETUP:
+	default:
+		/* Signature-locked: no ephemeral byte (anti-dedup via MAC). */
+		break;
+	}
+}
+
+static void test_ephemeral_contract(void)
+{
+	uint8_t i;
+	int checked = 0;
+
+	spam_models_rebuild_active(BT_SPAM_MODE_ALL);
+	spam_models_seed(0x00C0FFEEu);
+
+	for (i = 0; i < spam_models_count(); i++) {
+		spam_model_t base;
+		spam_model_t cur;
+		uint8_t expect[SPAM_MODEL_MAX_LEN];
+		uint8_t changed[SPAM_MODEL_MAX_LEN];
+		uint8_t len = spam_models_prepare(i, &base);
+		uint8_t j;
+		int iter;
+
+		CHECK(len > 0, "model %u: prepare returned 0", (unsigned)i);
+		if (len == 0) {
+			continue;
+		}
+		for (j = 0; j < SPAM_MODEL_MAX_LEN; j++) {
+			changed[j] = 0;
+		}
+
+		/* OR together every byte that moves relative to the reference
+		 * sample over many cycles. */
+		for (iter = 0; iter < EPH_ITERS; iter++) {
+			(void)spam_models_prepare(i, &cur);
+			for (j = 0; j < len; j++) {
+				if (cur.data[j] != base.data[j]) {
+					changed[j] = 1;
+				}
+			}
+		}
+
+		expected_ephemeral_set(&base, expect);
+		for (j = 0; j < len; j++) {
+			CHECK(changed[j] == expect[j],
+			      "model %u (%s) type %u byte %u: %s", (unsigned)i,
+			      base.name, (unsigned)base.type, (unsigned)j,
+			      expect[j] ? "ephemeral byte never varied" :
+					  "identity/signature byte was "
+					  "mutated");
+		}
+		checked++;
+	}
+
+	CHECK(checked == EXPECTED_TOTAL,
+	      "contract checked %d models, expected %d", checked,
+	      EXPECTED_TOTAL);
+	printf("[contract] per-type ephemeral byte set verified on %d models\n",
+	       checked);
+}
+
 /* Supporting checks: index mapping and mode names. */
 static void test_index_and_names(void)
 {
@@ -253,6 +363,7 @@ int main(void)
 	test_counts();
 	test_payload_shape();
 	test_randomization();
+	test_ephemeral_contract();
 	test_index_and_names();
 
 	if (failures == 0) {
