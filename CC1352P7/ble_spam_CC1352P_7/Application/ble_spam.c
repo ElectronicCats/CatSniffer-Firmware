@@ -284,7 +284,6 @@ Task_Struct spamTask;
 #endif
 uint8_t spamTaskStack[SPAM_TASK_STACK_SIZE];
 
-#define APP_EVT_EVENT_MAX 0xA
 char *appEventStrings[] = {
 	"APP_STATE_CHANGE_EVT     ", "APP_CHAR_CHANGE_EVT      ",
 	"APP_KEY_CHANGE_EVT       ", "APP_ADV_EVT              ",
@@ -293,6 +292,9 @@ char *appEventStrings[] = {
 	"APP_CONN_EVT             ", "APP_SPAM_CYCLE_EVT       ",
 	"APP_UART_CMD_EVT         ",
 };
+// Derived from the table so the bound can never drift from its length
+#define APP_EVT_EVENT_MAX \
+	(sizeof(appEventStrings) / sizeof(appEventStrings[0]) - 1)
 
 /*********************************************************************
  * LOCAL VARIABLES
@@ -456,6 +458,17 @@ void BleSpam_start(bt_spam_mode_t mode)
 {
 	bStatus_t advStatus;
 
+	if (!spamAdvReady) {
+		// GAP not up yet: the adv set does not exist, so we cannot arm
+		// the engine. Record the requested mode (so the eventual
+		// GAP-init call to BleSpam_start() uses it) and bail before
+		// mutating run state or emitting misleading "start" logs.
+		spamMode = mode;
+		BleSpam_log("SPAM: start deferred (GAP not ready) mode=%s",
+			    spam_models_mode_name(spamMode));
+		return;
+	}
+
 	spamMode = mode;
 	spam_models_rebuild_active(spamMode);
 	spamActiveIdx = 0;
@@ -484,10 +497,6 @@ void BleSpam_start(bt_spam_mode_t mode)
 	BleSpam_log("SPAM: model %s (1/%u)", spamCurModel.name,
 		    (unsigned)spam_models_count());
 	BleSpam_logAddr("SPAM: addr", spamAddr);
-
-	if (!spamAdvReady) {
-		return;
-	}
 
 	spamRunning = true;
 	BleSpam_swapPayload(&spamCurModel, false);
@@ -1911,9 +1920,16 @@ static void BleSpam_advCallback(uint32_t event, void *pBuf, uintptr_t arg)
 		pData->event = event;
 		pData->pBuf = pBuf;
 
-		if (BleSpam_enqueueMsg(SPAM_ADV_EVT, pData) != SUCCESS) {
-			ICall_free(pData);
+		if (BleSpam_enqueueMsg(SPAM_ADV_EVT, pData) == SUCCESS) {
+			return;
 		}
+		ICall_free(pData);
+	}
+
+	// Not queued: release the stack buffer as processAdvEvent would,
+	// otherwise every dropped event leaks pBuf under heap pressure
+	if ((event != GAP_EVT_INSUFFICIENT_MEMORY) && (pBuf != NULL)) {
+		ICall_free(pBuf);
 	}
 }
 
