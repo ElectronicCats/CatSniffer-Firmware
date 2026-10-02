@@ -331,6 +331,7 @@ static uint16_t spamCycleCount;	    // Cycles since BleSpam_start()
 static uint8_t spamLinkStallCycles; // Consecutive cycles blocked by a link
 static uint16_t spamStackPeak;	    // Task stack high-water in bytes
 static bool spamStackWarned;	    // One-shot latch for the stack WARN
+static uint32_t spamHeapMinFree = 0xFFFFFFFFu; // Lowest BLE heap free seen
 static bool spamRotateEveryCycle; // Rotate MAC per cycle (Fase 2, no ephemeral
 				  // payload)
 static spam_model_t spamCurModel; // Stack keeps the pointer after load
@@ -460,6 +461,7 @@ void BleSpam_start(bt_spam_mode_t mode)
 	spamActiveIdx = 0;
 	spamCycleCount = 0;
 	spamLinkStallCycles = 0;
+	spamHeapMinFree = 0xFFFFFFFFu; // reset watermark for the new run
 
 	// Fase 2 anti-dedup: Fast Pair (discoverable model ID) and Samsung
 	// EasySetup carry no per-cycle ephemeral payload field, so the receiver
@@ -652,16 +654,39 @@ static void BleSpam_logStats(void)
 {
 	ICall_heapStats_t heap;
 	uint16_t used = BleSpam_sampleStack();
+	uint32_t fragPct;
 
 	ICall_getHeapStats(&heap);
 
+	// Track the lowest free total seen this run. A healthy instantaneous
+	// free can still hide a slow leak; the watermark exposes the worst case
+	// across a long engagement. Updated at the stats cadence (every
+	// SPAM_STATS_CYCLES and on the "stats" command).
+	if (heap.totalFreeSize < spamHeapMinFree) {
+		spamHeapMinFree = heap.totalFreeSize;
+	}
+
+	// Fragmentation as integer percent: the share of free memory that is
+	// NOT in the largest contiguous block. A high value with ample
+	// totalFree still means large allocations (adv/scan buffers) can fail.
+	// Integer math keeps us off the float printf path the rest of the file
+	// avoids.
+	if (heap.totalFreeSize > 0) {
+		fragPct = ((heap.totalFreeSize - heap.largestFreeSize) * 100u) /
+			  heap.totalFreeSize;
+	} else {
+		fragPct = 100u;
+	}
+
 	BleSpam_log("STATS: cycles=%u stack=%u/%u run=%u pwr=%s int=%u-%u "
-		    "heap=%u/%u",
+		    "heap=%u/%u min=%u largest=%u frag=%u%%",
 		    (unsigned)spamCycleCount, (unsigned)used,
 		    (unsigned)SPAM_TASK_STACK_SIZE, (unsigned)spamRunning,
 		    spamPowerProfiles[spamPowerProfile].name,
 		    (unsigned)spamIntMin, (unsigned)spamIntMax,
-		    (unsigned)heap.totalFreeSize, (unsigned)heap.totalSize);
+		    (unsigned)heap.totalFreeSize, (unsigned)heap.totalSize,
+		    (unsigned)spamHeapMinFree, (unsigned)heap.largestFreeSize,
+		    (unsigned)fragPct);
 }
 
 /*********************************************************************
